@@ -199,7 +199,16 @@ def _get_oauth_credentials() -> Optional["Credentials"]:
 
     creds = None
 
-    if os.path.exists(OAUTH_TOKEN_FILE):
+    gmb_token_json = os.getenv("GMB_TOKEN_JSON")
+    if gmb_token_json:
+        try:
+            token_data = json.loads(gmb_token_json)
+            creds = Credentials.from_authorized_user_info(token_data, SCOPES)
+            logger.info("[Auth] Token loaded from GMB_TOKEN_JSON env var.")
+        except Exception as e:
+            logger.warning(f"[Auth] Failed to load token from GMB_TOKEN_JSON: {e}")
+
+    if not creds and os.path.exists(OAUTH_TOKEN_FILE):
         try:
             creds = Credentials.from_authorized_user_file(OAUTH_TOKEN_FILE, SCOPES)
             logger.info(f"[Auth] Token loaded from: {OAUTH_TOKEN_FILE}")
