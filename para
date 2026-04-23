@@ -1,0 +1,167 @@
+import json
+import csv
+import calendar
+import requests
+from google.oauth2.credentials import Credentials
+from google.auth.transport.requests import Request
+from datetime import datetime
+
+# Load & refresh token
+creds = Credentials.from_authorized_user_file('token.json')
+if creds.expired and creds.refresh_token:
+    creds.refresh(Request())
+    with open('token.json', 'w') as f:
+        json.dump({
+            'token': creds.token,
+            'refresh_token': creds.refresh_token,
+            'token_uri': creds.token_uri,
+            'client_id': creds.client_id,
+            'client_secret': creds.client_secret,
+            'scopes': list(creds.scopes)
+        }, f, indent=2)
+
+headers = {'Authorization': f'Bearer {creds.token}'}
+
+def get_all_locations():
+    locations = []
+    url = "https://mybusinessbusinessinformation.googleapis.com/v1/accounts/114295392753759292048/locations"
+    params = {'readMask': 'name,title', 'pageSize': 100}
+    while True:
+        r = requests.get(url, params=params, headers=headers)
+        data = r.json()
+        locations.extend(data.get('locations', []))
+        next_token = data.get('nextPageToken')
+        if not next_token:
+            break
+        params['pageToken'] = next_token
+    return locations
+
+# Months to fetch
+MONTHS = [
+    (2026, 2, 'FEB'),
+    (2026, 3, 'MAR'),
+]
+
+metrics = [
+    "BUSINESS_IMPRESSIONS_DESKTOP_SEARCH",
+    "BUSINESS_IMPRESSIONS_MOBILE_SEARCH",
+    "BUSINESS_IMPRESSIONS_DESKTOP_MAPS",
+    "BUSINESS_IMPRESSIONS_MOBILE_MAPS",
+    "CALL_CLICKS",
+    "WEBSITE_CLICKS",
+    "BUSINESS_DIRECTION_REQUESTS",
+    "BUSINESS_CONVERSATIONS",
+    "BUSINESS_BOOKINGS",
+]
+
+VIEW_METRICS = [
+    "BUSINESS_IMPRESSIONS_DESKTOP_SEARCH",
+    "BUSINESS_IMPRESSIONS_MOBILE_SEARCH",
+    "BUSINESS_IMPRESSIONS_DESKTOP_MAPS",
+    "BUSINESS_IMPRESSIONS_MOBILE_MAPS",
+]
+
+INTERACTION_METRICS = [
+    "CALL_CLICKS",
+    "WEBSITE_CLICKS",
+    "BUSINESS_DIRECTION_REQUESTS",
+    "BUSINESS_CONVERSATIONS",
+    "BUSINESS_BOOKINGS",
+]
+
+def get_metric_monthly(location_name, metric, year, month):
+    last_day = calendar.monthrange(year, month)[1]
+    url = f"https://businessprofileperformance.googleapis.com/v1/{location_name}:getDailyMetricsTimeSeries"
+    params = {
+        'dailyMetric': metric,
+        'dailyRange.startDate.year': year,
+        'dailyRange.startDate.month': month,
+        'dailyRange.startDate.day': 1,
+        'dailyRange.endDate.year': year,
+        'dailyRange.endDate.month': month,
+        'dailyRange.endDate.day': last_day,
+    }
+    r = requests.get(url, params=params, headers=headers)
+    data = r.json()
+    if 'error' in data:
+        return 0, data['error']['message']
+    values = data.get('timeSeries', {}).get('datedValues', [])
+    total = sum(int(v.get('value', 0)) for v in values if v.get('value'))
+    return total, None
+
+print("\n📊 GMB PERFORMANCE DATA - Feb & Mar 2026 (Monthly Breakdown)")
+print("=" * 70)
+
+locations = get_all_locations()
+print(f"✅ Found {len(locations)} locations\n")
+
+all_results = []
+
+for loc in locations:
+    location_name = loc['name']
+    business_name = loc['title']
+
+    print(f"🏥 {business_name}")
+
+    loc_result = {
+        'business': business_name,
+        'location': location_name,
+    }
+
+    for year, month, label in MONTHS:
+        for metric in metrics:
+            total, error = get_metric_monthly(location_name, metric, year, month)
+            key = f'{metric}_{label}'
+            if error:
+                print(f"   ❌ {key}: {error}")
+            else:
+                print(f"   ✅ {key}: {total}")
+            loc_result[key] = total
+
+        # Monthly totals
+        loc_result[f'TOTAL_VIEWS_{label}'] = sum(
+            loc_result.get(f'{m}_{label}', 0) for m in VIEW_METRICS
+        )
+        loc_result[f'TOTAL_INTERACTIONS_{label}'] = sum(
+            loc_result.get(f'{m}_{label}', 0) for m in INTERACTION_METRICS
+        )
+
+        print(f"   📊 PROFILE VIEWS {label}: {loc_result[f'TOTAL_VIEWS_{label}']}")
+        print(f"   📊 INTERACTIONS {label}: {loc_result[f'TOTAL_INTERACTIONS_{label}']}")
+
+    # Overall totals (Feb + Mar combined)
+    loc_result['TOTAL_VIEWS_OVERALL'] = (
+        loc_result.get('TOTAL_VIEWS_FEB', 0) +
+        loc_result.get('TOTAL_VIEWS_MAR', 0)
+    )
+    loc_result['TOTAL_INTERACTIONS_OVERALL'] = (
+        loc_result.get('TOTAL_INTERACTIONS_FEB', 0) +
+        loc_result.get('TOTAL_INTERACTIONS_MAR', 0)
+    )
+
+    print(f"   📊 TOTAL VIEWS (Feb+Mar): {loc_result['TOTAL_VIEWS_OVERALL']}")
+    print(f"   📊 TOTAL INTERACTIONS (Feb+Mar): {loc_result['TOTAL_INTERACTIONS_OVERALL']}")
+
+    all_results.append(loc_result)
+    print()
+
+# Save JSON
+with open('gmb_performance_results.json', 'w') as f:
+    json.dump(all_results, f, indent=2)
+
+# Save CSV
+fieldnames = ['business', 'location',
+    'TOTAL_VIEWS_FEB', 'TOTAL_INTERACTIONS_FEB',
+    'TOTAL_VIEWS_MAR', 'TOTAL_INTERACTIONS_MAR',
+    'TOTAL_VIEWS_OVERALL', 'TOTAL_INTERACTIONS_OVERALL',
+] + [f'{m}_FEB' for m in metrics] + [f'{m}_MAR' for m in metrics]
+
+with open('gmb_performance_results.csv', 'w', newline='', encoding='utf-8') as f:
+    writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction='ignore')
+    writer.writeheader()
+    writer.writerows(all_results)
+
+print("=" * 70)
+print(f"✅ Done! {len(all_results)} businesses saved to:")
+print("   📄 gmb_performance_results.json")
+print("   📊 gmb_performance_results.csv")

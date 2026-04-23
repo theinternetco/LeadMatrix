@@ -1,0 +1,1 @@
+from app.routers import gmb_posts
