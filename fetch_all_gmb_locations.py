@@ -21,9 +21,15 @@ print("  LeadMatrix - Fetch ALL GMB Locations")
 print("="*60)
 
 # ── Load & Refresh Token ─────────────────────────────────────
-print("\n[1/4] Loading token.json...")
-with open(TOKEN_FILE, "r") as f:
-    token_data = json.load(f)
+print("\n[1/4] Loading token...")
+gmb_token_json = os.getenv("GMB_TOKEN_JSON")
+if gmb_token_json:
+    token_data = json.loads(gmb_token_json)
+elif os.path.exists(TOKEN_FILE):
+    with open(TOKEN_FILE, "r") as f:
+        token_data = json.load(f)
+else:
+    raise FileNotFoundError("No token found. Set GMB_TOKEN_JSON env var or provide token.json.")
 
 creds = Credentials(
     token         = token_data.get("token"),

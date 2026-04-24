@@ -5,8 +5,7 @@ Run this once to create all tables
 import sys
 import os
 
-# Add app directory to path
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.database import engine, Base, check_db_connection
 from app.models import (
