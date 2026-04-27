@@ -208,10 +208,11 @@ async def lifespan(app: FastAPI):
 # ============================================================
 
 app = FastAPI(
-    title       = "LeadMatrix API",
-    description = "GMB Analytics Backend with V4.1 MULTI-TAB SCRAPING + One-Click Sync",
-    version     = "5.3.1",
-    lifespan    = lifespan,
+    title            = "LeadMatrix API",
+    description      = "GMB Analytics Backend with V4.1 MULTI-TAB SCRAPING + One-Click Sync",
+    version          = "5.3.1",
+    lifespan         = lifespan,
+    redirect_slashes = False,
 )
 
 app.add_middleware(

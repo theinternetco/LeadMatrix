@@ -806,7 +806,7 @@ def edit_auto_post(post_id: int, payload: AutoEditRequest, db: Session = Depends
 # POST /api/gmb-posts/ — Create (Manual)
 # ==========================================
 
-@router.post("/", status_code=201)
+@router.post("", status_code=201)
 def create_post(payload: GmbPostCreate, db: Session = Depends(get_db)):
     """
     Create a post for one or multiple businesses.
@@ -926,7 +926,7 @@ def bulk_confirm_posts(payload: BulkConfirmRequest, db: Session = Depends(get_db
 # GET /api/gmb-posts/ — List (with pagination metadata)
 # ==========================================
 
-@router.get("/")
+@router.get("")
 def list_posts(
     business_id: Optional[int] = Query(None),
     profile_id:  Optional[str] = Query(None),
