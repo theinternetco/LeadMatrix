@@ -10,7 +10,7 @@ from pydantic.alias_generators import to_camel
 from app.database import get_db
 from app.models import GMBPost, Business
 
-router = APIRouter()
+router = APIRouter(redirect_slashes=False)
 logger = logging.getLogger("gmb_posts")
 
 ROUTER_VERSION = "2.0"
