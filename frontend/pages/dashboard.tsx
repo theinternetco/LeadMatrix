@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
+import API_BASE from '../lib/api';
 import {
   Chart as ChartJS, CategoryScale, LinearScale, PointElement,
   LineElement, BarElement, Tooltip, Filler
@@ -22,7 +23,7 @@ const BRAND = {
   accentDark:  process.env.NEXT_PUBLIC_BRAND_DARK    || '#4f46e5',   // hover
   poweredBy:   process.env.NEXT_PUBLIC_POWERED_BY    || 'Leadmatrix', // footer
   showPowered: process.env.NEXT_PUBLIC_SHOW_POWERED  !== 'false',    // hide for clients
-  apiUrl:      process.env.NEXT_PUBLIC_API_URL       || 'http://localhost:8000',
+  apiUrl:      API_BASE,
 };
 // ══════════════════════════════════════════════════════════════
 

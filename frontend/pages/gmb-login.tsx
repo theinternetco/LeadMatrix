@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import Link from 'next/link';
+import API_BASE from '../lib/api';
 
 export default function GMBLogin() {
   const [email, setEmail] = useState('');
@@ -47,7 +48,7 @@ export default function GMBLogin() {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 3000);
       
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/health`, {
+      const response = await fetch(`${API_BASE}/api/health`, {
         signal: controller.signal
       });
       
@@ -119,7 +120,7 @@ export default function GMBLogin() {
     const progressInterval = simulateProgress();
 
     try {
-      const url = new URL('http://localhost:8000/api/gmb/stealth-login');
+      const url = new URL(`${API_BASE}/api/gmb/stealth-login`);
       url.searchParams.append('email', email);
       url.searchParams.append('password', password);
       url.searchParams.append('headless', 'false');

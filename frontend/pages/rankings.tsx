@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import styles from '../styles/RankingTracker.module.css';
+import API_BASE from '../lib/api';
 
 // ✅ Enterprise Interfaces
 interface FormData {
@@ -59,7 +60,7 @@ interface ApiError {
     message?: string;
 }
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+const API_BASE_URL = API_BASE;
 const POLL_INTERVAL = 2000;
 const MAX_POLL_ATTEMPTS = 300;
 
