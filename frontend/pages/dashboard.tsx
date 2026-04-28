@@ -336,9 +336,10 @@ export default function Dashboard() {
                   <p style={{ fontSize: '0.79rem', fontWeight: 700, color: '#0f172a', lineHeight: 1.2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{userName || userEmail}</p>
                   <p style={{ fontSize: '0.63rem', color: '#94a3b8' }}>Team Member</p>
                 </div>
-                <button onClick={handleLogout} title="Sign out" style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4, color: '#94a3b8', flexShrink: 0 }}>
-                  ⎋
-                </button>
+                <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
+                  <Link href="/change-password" title="Change password" style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4, color: '#94a3b8', fontSize: 13, textDecoration: 'none' }}>🔑</Link>
+                  <button onClick={handleLogout} title="Sign out" style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4, color: '#94a3b8', fontSize: 13 }}>⎋</button>
+                </div>
               </div>
             )}
             <button onClick={() => setSidebar(p => !p)} style={{ width: '100%', padding: '7px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8', transition: 'all .2s' }} className="top-btn">
