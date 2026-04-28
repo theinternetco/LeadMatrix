@@ -982,7 +982,9 @@ function PostRow({ post, isSelected, bizName, onSelect, onPublish, onDelete }: {
                 <span style={{ fontSize: '.72rem', fontWeight: 700 }}>Publish</span>
               </button>
             )}
-            <button className="sc-icon-btn" onClick={() => onDelete(post.id)} title="Delete"><Icon d={IC.trash} size={13} /></button>
+            {post.status !== 'published' && (
+              <button className="sc-icon-btn" onClick={() => onDelete(post.id)} title="Delete"><Icon d={IC.trash} size={13} /></button>
+            )}
           </div>
         </td>
       </tr>
