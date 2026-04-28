@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/router';
 import API_BASE from '../lib/api';
 import {
   Chart as ChartJS, CategoryScale, LinearScale, PointElement,
@@ -103,6 +104,7 @@ const hex2rgb = (h: string) => { const r = parseInt(h.slice(1, 3), 16), g = pars
 
 // ═══════════════════════════════════════════════════════════════
 export default function Dashboard() {
+  const router = useRouter();
   const [bizList,  setBizList]  = useState<Business[]>([]);
   const [dash,     setDash]     = useState<DashData>({});
   const [loading,  setLoading]  = useState(true);
@@ -111,6 +113,15 @@ export default function Dashboard() {
   const [tab,      setTab]      = useState<'overview' | 'businesses' | 'tools'>('overview');
   const [sidebar,  setSidebar]  = useState(true);
   const [clock,    setClock]    = useState('');
+  const [userName, setUserName] = useState('');
+  const [userEmail, setUserEmail] = useState('');
+
+  const handleLogout = () => {
+    localStorage.removeItem('lm_token');
+    localStorage.removeItem('lm_user_email');
+    localStorage.removeItem('lm_user_name');
+    router.replace('/login');
+  };
   const [feb,      setFeb]      = useState({ views: 0, calls: 0, dirs: 0, clicks: 0 });
   const [mar,      setMar]      = useState({ views: 0, calls: 0, dirs: 0, clicks: 0 });
 
@@ -156,6 +167,10 @@ export default function Dashboard() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    setUserName(localStorage.getItem('lm_user_name') || '');
+    setUserEmail(localStorage.getItem('lm_user_email') || '');
+  }, []);
   useEffect(() => {
     const t = setInterval(() =>
       setClock(new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })), 1000);
@@ -314,12 +329,16 @@ export default function Dashboard() {
           <div style={{ borderTop: '1px solid #f1f5f9', padding: '12px' }}>
             {sidebar && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '9px 11px', background: '#f8fafc', borderRadius: '10px', marginBottom: 8, border: '1px solid #f1f5f9' }}>
-                <div style={{ width: 30, height: 30, borderRadius: '50%', background: `linear-gradient(135deg,${ac},${BRAND.accentDark})`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.75rem', fontWeight: 800, color: 'white', flexShrink: 0 }}>H</div>
-                <div>
-                  <p style={{ fontSize: '0.79rem', fontWeight: 700, color: '#0f172a', lineHeight: 1.2 }}>Himanshu</p>
-                  <p style={{ fontSize: '0.63rem', color: '#94a3b8' }}>Admin · Daman</p>
+                <div style={{ width: 30, height: 30, borderRadius: '50%', background: `linear-gradient(135deg,${ac},${BRAND.accentDark})`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.75rem', fontWeight: 800, color: 'white', flexShrink: 0 }}>
+                  {(userName || userEmail).charAt(0).toUpperCase() || 'U'}
                 </div>
-                <Link href="/settings" style={{ marginLeft: 'auto', color: '#cbd5e1' }}><I d={P.settings} s={14} c="#cbd5e1" /></Link>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <p style={{ fontSize: '0.79rem', fontWeight: 700, color: '#0f172a', lineHeight: 1.2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{userName || userEmail}</p>
+                  <p style={{ fontSize: '0.63rem', color: '#94a3b8' }}>Team Member</p>
+                </div>
+                <button onClick={handleLogout} title="Sign out" style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4, color: '#94a3b8', flexShrink: 0 }}>
+                  ⎋
+                </button>
               </div>
             )}
             <button onClick={() => setSidebar(p => !p)} style={{ width: '100%', padding: '7px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8', transition: 'all .2s' }} className="top-btn">
