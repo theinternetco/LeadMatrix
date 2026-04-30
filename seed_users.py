@@ -14,6 +14,10 @@ from app.routers.auth import hash_password
 
 USERS = [
     {"email": "zishan@theinternetcompany.in",  "full_name": "Zishan",  "password": "changeme123"},
+    {"email": "abhishek@theinternetcompany.in",  "full_name": "Abhishek",  "password": "changeme123"},
+    {"email": "arbaz@theinternetcompany.in",  "full_name": "Arbaz",  "password": "changeme123"},
+    {"email": "himanshu@theinternetcompany.in",  "full_name": "Himanshu",  "password": "changeme123"},
+    {"email": "shailesh@theinternetcompany.in",  "full_name": "Shailesh",  "password": "changeme123"},
     # Add more team members:
     # {"email": "name@theinternetcompany.in", "full_name": "Name", "password": "changeme123"},
 ]
