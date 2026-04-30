@@ -1,6 +1,7 @@
 annotated-doc==0.0.4
 python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
+bcrypt==4.0.1
 google-api-core==2.30.3
 google-api-python-client==2.194.0
 google-auth==2.49.2
