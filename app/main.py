@@ -36,7 +36,7 @@ from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field
 from app.api import endpoints
-from app.routers import gmb_posts, auth
+from app.routers import gmb_posts, auth, admin
 from app.database import get_db
 
 from app.services.scheduler import scheduler as gmb_scheduler
@@ -255,6 +255,7 @@ sync_sessions:    dict = {}
 app.include_router(endpoints.router, prefix="/v1")
 app.include_router(gmb_posts.router, prefix="/api/gmb-posts", tags=["GMB Posts"])
 app.include_router(auth.router,      prefix="/api/auth",      tags=["Auth"])
+app.include_router(admin.router,     prefix="/api/admin",     tags=["Admin"])
 
 
 # ============================================================
