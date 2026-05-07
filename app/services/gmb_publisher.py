@@ -749,6 +749,32 @@ def publish_post_to_gmb(post, profile_id: str | None = None) -> dict:
                 ),
             }
 
+        # If location_name is an account path only (missing /locations/),
+        # auto-resolve to the first location under that account.
+        if "/locations/" not in location_name and not location_name.startswith("http"):
+            logger.warning(
+                f"[GMBPublisher] profile_id '{location_name}' looks like an account path, "
+                "not a location path. Auto-resolving to first location…"
+            )
+            try:
+                locs = list_locations(location_name)
+                if locs:
+                    location_name = locs[0]["name"]
+                    logger.info(f"[GMBPublisher] Auto-resolved → {location_name}")
+                else:
+                    return {
+                        "success":      False,
+                        "gmb_response": None,
+                        "error":        f"No locations found under GMB account '{location_name}'.",
+                    }
+            except Exception as e:
+                logger.error(f"[GMBPublisher] Could not auto-resolve location from account path: {e}")
+                return {
+                    "success":      False,
+                    "gmb_response": None,
+                    "error":        f"Could not auto-resolve location from '{location_name}': {e}",
+                }
+
         if location_name.startswith("http"):
             logger.warning(
                 f"[GMBPublisher] profile_id looks like a URL, not an API path: {location_name}. "
