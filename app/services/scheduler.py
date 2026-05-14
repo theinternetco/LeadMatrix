@@ -5,7 +5,7 @@ publishes via GMB API.
 """
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from sqlalchemy.orm import Session
@@ -14,6 +14,26 @@ from app.database import SessionLocal
 from app.models import GMBPost, Business
 
 logger = logging.getLogger("gmb_scheduler")
+
+
+async def _cleanup_old_posts():
+    """Delete published posts older than 7 days."""
+    db: Session = SessionLocal()
+    try:
+        cutoff = datetime.now(timezone.utc) - timedelta(days=7)
+        deleted = (
+            db.query(GMBPost)
+            .filter(GMBPost.status == "published", GMBPost.published_date <= cutoff)
+            .delete(synchronize_session=False)
+        )
+        db.commit()
+        if deleted:
+            logger.info("🗑️  Cleanup: deleted %d published post(s) older than 7 days", deleted)
+    except Exception:
+        logger.exception("Cleanup job _cleanup_old_posts crashed")
+        db.rollback()
+    finally:
+        db.close()
 
 
 async def _process_due_posts():
@@ -152,6 +172,14 @@ class GMBScheduler:
                 replace_existing=True,
                 max_instances=1,        # never overlap — one run at a time
                 misfire_grace_time=30,  # if missed by <30s, still execute
+            )
+            self.scheduler.add_job(
+                _cleanup_old_posts,
+                trigger="interval",
+                hours=24,
+                id="gmb_post_cleanup",
+                replace_existing=True,
+                max_instances=1,
             )
             self.scheduler.start()
             self.is_running = True
