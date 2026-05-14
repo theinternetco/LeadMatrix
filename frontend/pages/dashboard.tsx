@@ -115,6 +115,7 @@ export default function Dashboard() {
   const [clock,    setClock]    = useState('');
   const [userName, setUserName] = useState('');
   const [userEmail, setUserEmail] = useState('');
+  const ADMIN_EMAILS = ['abhishek@theinternetcompany.in', 'zishan@theinternetcompany.in'];
 
   const handleLogout = () => {
     localStorage.removeItem('lm_token');
@@ -323,6 +324,15 @@ export default function Dashboard() {
                 {sidebar && l.label}
               </Link>
             ))}
+            {ADMIN_EMAILS.includes(userEmail) && (
+              <>
+                {sidebar && <p style={{ padding: '16px 16px 4px', fontSize: '0.62rem', fontWeight: 700, color: '#cbd5e1', letterSpacing: '1px', textTransform: 'uppercase' }}>Admin</p>}
+                <Link href="/admin/users" className="nav-btn" style={{ display: 'flex', alignItems: 'center', gap: 9, textDecoration: 'none', padding: sidebar ? '9px 14px' : '9px 0', justifyContent: sidebar ? 'flex-start' : 'center', borderLeft: '3px solid transparent', color: '#64748b', fontSize: '0.83rem', fontWeight: 500 }}>
+                  <I d={P.settings} s={14} c="#94a3b8" />
+                  {sidebar && 'Manage Users'}
+                </Link>
+              </>
+            )}
           </nav>
 
           {/* User + collapse */}
