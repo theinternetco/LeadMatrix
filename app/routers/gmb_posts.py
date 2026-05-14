@@ -2,13 +2,16 @@ import logging
 from datetime import datetime, timezone
 from typing import List, Optional
 
+import io
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field, field_validator, model_validator, ConfigDict
 from pydantic.alias_generators import to_camel
 
 from app.database import get_db
-from app.models import GMBPost, Business
+from app.models import GMBPost, Business, PostHistory
+from app.services.post_history import record_post, update_post_status
 
 router = APIRouter(redirect_slashes=False)
 logger = logging.getLogger("gmb_posts")
@@ -733,6 +736,7 @@ def confirm_auto_post(post_id: int, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(post)
 
+    record_post(db, post)
     logger.info("Auto-post confirmed: id=%s scheduled=%s", post.id, post.scheduled_date)
     return GmbPostOut.from_orm_post(post)
 
@@ -870,6 +874,8 @@ def create_post(payload: GmbPostCreate, db: Session = Depends(get_db)):
                 db.refresh(post)
                 logger.info("Post id=%s scheduled for %s (business_id=%s)", post.id, post.scheduled_date, bid)
 
+            biz_name_str = getattr(business, "business_name", None) or getattr(business, "name", None) or f"Business #{bid}"
+            record_post(db, post, business_name=biz_name_str)
             results.append(GmbPostOut.from_orm_post(post).model_dump())
 
         except HTTPException as he:
@@ -920,6 +926,106 @@ def bulk_confirm_posts(payload: BulkConfirmRequest, db: Session = Depends(get_db
     db.commit()
     logger.info("Bulk confirm: %d confirmed, %d errors", len(confirmed), len(errors))
     return {"confirmed": len(confirmed), "post_ids": confirmed, "errors": errors}
+
+
+# ==========================================
+# GET /api/gmb-posts/history/export — Monthly Excel Export
+# ==========================================
+
+@router.get("/history/export")
+def export_post_history(
+    month: Optional[int] = Query(None, ge=1, le=12, description="Month to export (default: current month)"),
+    year:  Optional[int] = Query(None, ge=2020,     description="Year to export (default: current year)"),
+    db: Session = Depends(get_db),
+):
+    import openpyxl
+    from openpyxl.styles import Font, PatternFill, Alignment
+    from openpyxl.utils import get_column_letter
+
+    now           = datetime.now(timezone.utc)
+    export_month  = month or now.month
+    export_year   = year  or now.year
+
+    rows = (
+        db.query(PostHistory)
+        .filter(PostHistory.month == export_month, PostHistory.year == export_year)
+        .order_by(PostHistory.business_name.asc(), PostHistory.scheduled_date.asc())
+        .all()
+    )
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    month_name = datetime(export_year, export_month, 1).strftime("%B %Y")
+    ws.title = month_name[:31]
+
+    # ── Header ─────────────────────────────────────────────────────────────────
+    headers = ["Client / Business", "Title", "Content", "Type", "Status", "Scheduled Date", "Published Date"]
+    header_fill = PatternFill("solid", fgColor="6366F1")
+    header_font = Font(bold=True, color="FFFFFF", size=11)
+    for col, h in enumerate(headers, 1):
+        cell = ws.cell(row=1, column=col, value=h)
+        cell.fill = header_fill
+        cell.font = header_font
+        cell.alignment = Alignment(horizontal="center", vertical="center")
+
+    ws.row_dimensions[1].height = 22
+
+    # ── Data rows, colour-coded by status ──────────────────────────────────────
+    STATUS_COLORS = {
+        "published": "D1FAE5",  # green tint
+        "scheduled": "DBEAFE",  # blue tint
+        "failed":    "FEE2E2",  # red tint
+    }
+    current_biz   = None
+    biz_fill_alt  = PatternFill("solid", fgColor="F8F9FF")
+    biz_fill_main = PatternFill("solid", fgColor="FFFFFF")
+    biz_toggle    = False
+
+    for row_idx, r in enumerate(rows, 2):
+        if r.business_name != current_biz:
+            current_biz = r.business_name
+            biz_toggle  = not biz_toggle
+
+        status_str = r.status or ""
+        row_fill   = PatternFill("solid", fgColor=STATUS_COLORS.get(status_str, "F1F5F9"))
+
+        def _fmt_dt(dt):
+            if not dt:
+                return ""
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            return dt.strftime("%d %b %Y %H:%M")
+
+        values = [
+            r.business_name,
+            r.title or "",
+            r.content or "",
+            r.post_type or "",
+            status_str.upper(),
+            _fmt_dt(r.scheduled_date),
+            _fmt_dt(r.published_date),
+        ]
+        for col, val in enumerate(values, 1):
+            cell = ws.cell(row=row_idx, column=col, value=val)
+            cell.fill = row_fill
+            cell.alignment = Alignment(wrap_text=(col == 3), vertical="top")
+
+    # ── Column widths ─────────────────────────────────────────────────────────
+    col_widths = [28, 30, 60, 12, 14, 22, 22]
+    for i, w in enumerate(col_widths, 1):
+        ws.column_dimensions[get_column_letter(i)].width = w
+
+    # ── Stream response ───────────────────────────────────────────────────────
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+
+    filename = f"posts_{export_year}_{export_month:02d}.xlsx"
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 # ==========================================

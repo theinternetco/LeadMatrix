@@ -11,7 +11,8 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from sqlalchemy.orm import Session
 
 from app.database import SessionLocal
-from app.models import GMBPost, Business
+from app.models import GMBPost, Business, PostHistory
+from app.services.post_history import update_post_status
 
 logger = logging.getLogger("gmb_scheduler")
 
@@ -132,6 +133,7 @@ async def _process_due_posts():
                     )
 
                 db.commit()
+                update_post_status(db, post.id, post.status, post.published_date)
 
             except Exception as e:
                 logger.exception("Exception processing post id=%s (biz=%s)", post.id, post.business_id)
@@ -151,6 +153,35 @@ async def _process_due_posts():
 
     except Exception:
         logger.exception("Scheduler job _process_due_posts crashed")
+        db.rollback()
+    finally:
+        db.close()
+
+
+async def _cleanup_post_history():
+    """On or after the 10th of each month, delete previous month's post history entries."""
+    now = datetime.now(timezone.utc)
+    if now.day < 10:
+        return  # wait until the 10th grace period has passed
+
+    # Compute previous month/year
+    if now.month == 1:
+        prev_month, prev_year = 12, now.year - 1
+    else:
+        prev_month, prev_year = now.month - 1, now.year
+
+    db: Session = SessionLocal()
+    try:
+        deleted = (
+            db.query(PostHistory)
+            .filter(PostHistory.year == prev_year, PostHistory.month == prev_month)
+            .delete(synchronize_session=False)
+        )
+        db.commit()
+        if deleted:
+            logger.info("📋 History cleanup: deleted %d entries for %d/%d", deleted, prev_month, prev_year)
+    except Exception:
+        logger.exception("History cleanup job crashed")
         db.rollback()
     finally:
         db.close()
@@ -178,6 +209,14 @@ class GMBScheduler:
                 trigger="interval",
                 hours=24,
                 id="gmb_post_cleanup",
+                replace_existing=True,
+                max_instances=1,
+            )
+            self.scheduler.add_job(
+                _cleanup_post_history,
+                trigger="interval",
+                hours=24,
+                id="gmb_history_cleanup",
                 replace_existing=True,
                 max_instances=1,
             )

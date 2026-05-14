@@ -1154,6 +1154,14 @@ export default function SchedulerPage() {
         </div>
         <div className="sc-topbar-right">
           <button className="sc-btn sc-btn-ghost" onClick={fetchPosts}><Icon d={IC.refresh} size={13} /> Refresh</button>
+          <a
+            href={`${API_BASE}/api/gmb-posts/history/export`}
+            download
+            className="sc-btn sc-btn-ghost"
+            style={{ textDecoration: 'none' }}
+          >
+            <Icon d="M12 15V3m0 12l-4-4m4 4l4-4M2 17l.621 2.485A2 2 0 0 0 4.561 21h14.878a2 2 0 0 0 1.94-1.515L22 17" size={13} /> Export
+          </a>
           <Link href="/businesses-list" className="sc-btn sc-btn-ghost"><Icon d={IC.back} size={13} /> Back</Link>
         </div>
       </header>

@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float, DateTime, Boolean, Text, JSON, ForeignKey, Date
+from sqlalchemy import Column, Integer, String, Float, DateTime, Boolean, Text, JSON, ForeignKey, Date, UniqueConstraint
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 from app.database import Base
@@ -353,6 +353,38 @@ class GMBPost(Base):
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 
     business = relationship("Business", back_populates="posts")
+
+
+# ==========================================
+# POST HISTORY
+# ==========================================
+
+
+class PostHistory(Base):
+    """Monthly log of all scheduled/published posts per business. Cleared on the 10th of each month for the previous month."""
+    __tablename__ = "post_history"
+
+    id              = Column(Integer, primary_key=True, index=True)
+    post_id         = Column(Integer, nullable=True, index=True)  # original GMBPost.id; may be NULL after 7-day cleanup
+    business_id     = Column(Integer, ForeignKey("businesses.id"), nullable=False, index=True)
+    business_name   = Column(String(300), nullable=False)         # denormalized for history
+
+    title           = Column(String(500),  nullable=True)
+    content         = Column(Text,         nullable=True)
+    media_url       = Column(String(1000), nullable=True)
+    post_type       = Column(String(50),   nullable=True)
+    status          = Column(String(50),   nullable=False, index=True)
+    scheduled_date  = Column(DateTime(timezone=True), nullable=True)
+    published_date  = Column(DateTime(timezone=True), nullable=True)
+
+    month           = Column(Integer, nullable=False, index=True)
+    year            = Column(Integer, nullable=False, index=True)
+
+    created_at      = Column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("post_id", name="uq_post_history_post_id"),
+    )
 
 
 # ==========================================
