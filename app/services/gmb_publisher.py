@@ -336,14 +336,12 @@ def list_accounts() -> list[dict]:
 
 def list_locations(account_name: str) -> list[dict]:
     token = get_access_token()
+    # Use the legacy v4 API (same as posts) — consistent auth scope, fully-qualified names
     try:
         resp = _requests.get(
-            f"{GMB_INFO_BASE}/{account_name}/locations",
+            f"{GMB_POSTS_BASE}/{account_name}/locations",
             headers={"Authorization": f"Bearer {token}"},
-            params={
-                "readMask": "name,title,storefrontAddress,websiteUri",
-                "pageSize": 100,
-            },
+            params={"pageSize": 100},
             timeout=(GMB_CONNECT_TIMEOUT, GMB_READ_TIMEOUT),
         )
         resp.raise_for_status()
@@ -353,9 +351,14 @@ def list_locations(account_name: str) -> list[dict]:
     except RequestsConnectionError as e:
         logger.error(f"[GMBPublisher] Connection error fetching locations: {e}")
         raise
+    except Exception as e:
+        logger.error(f"[GMBPublisher] Failed to fetch locations for {account_name}: {e}")
+        raise
 
     locs = resp.json().get("locations", [])
 
+    # v4 API returns fully-qualified names (accounts/{id}/locations/{id})
+    # v1 API returns short names (locations/{id}) — prefix those just in case
     for loc in locs:
         if loc.get("name", "").startswith("locations/"):
             loc["name"] = f"{account_name}/{loc['name']}"
@@ -759,8 +762,28 @@ def publish_post_to_gmb(post, profile_id: str | None = None) -> dict:
             try:
                 locs = list_locations(location_name)
                 if locs:
-                    location_name = locs[0]["name"]
+                    resolved = locs[0]["name"]
+                    if "/locations/" not in resolved:
+                        return {
+                            "success":      False,
+                            "gmb_response": None,
+                            "error":        f"Auto-resolve returned invalid location name '{resolved}' (missing /locations/ segment).",
+                        }
+                    location_name = resolved
                     logger.info(f"[GMBPublisher] Auto-resolved → {location_name}")
+                    # Persist the resolved path to the business record so future publishes use it directly
+                    try:
+                        from app.database import SessionLocal
+                        from app.models import Business as _Business
+                        _db = SessionLocal()
+                        _biz = _db.query(_Business).filter(_Business.id == post.business_id).first()
+                        if _biz:
+                            _biz.gmb_url = location_name
+                            _db.commit()
+                            logger.info(f"[GMBPublisher] Persisted resolved location to business id={post.business_id}")
+                        _db.close()
+                    except Exception as _pe:
+                        logger.warning(f"[GMBPublisher] Could not persist resolved location: {_pe}")
                 else:
                     return {
                         "success":      False,
