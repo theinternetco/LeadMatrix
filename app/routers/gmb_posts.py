@@ -1186,6 +1186,7 @@ def trigger_post_now(post_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail="Post is already published")
 
     profile_id = _resolve_profile_id(post, db)
+    logger.info("Trigger post id=%s using profile_id=%s", post.id, profile_id)
 
     from app.services.gmb_publisher import publish_post_to_gmb
     result = publish_post_to_gmb(post, profile_id=profile_id)
@@ -1200,7 +1201,10 @@ def trigger_post_now(post_id: int, db: Session = Depends(get_db)):
     db.refresh(post)
 
     if post.status == "failed":
-        raise HTTPException(status_code=422, detail=f"GMB publish failed: {post.error_log}")
+        raise HTTPException(
+            status_code=422,
+            detail=f"GMB publish failed [profile={profile_id}]: {post.error_log}",
+        )
 
     return GmbPostOut.from_orm_post(post)
 
