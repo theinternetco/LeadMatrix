@@ -336,12 +336,14 @@ def list_accounts() -> list[dict]:
 
 def list_locations(account_name: str) -> list[dict]:
     token = get_access_token()
-    # Use the legacy v4 API (same as posts) — consistent auth scope, fully-qualified names
     try:
         resp = _requests.get(
-            f"{GMB_POSTS_BASE}/{account_name}/locations",
+            f"{GMB_INFO_BASE}/{account_name}/locations",
             headers={"Authorization": f"Bearer {token}"},
-            params={"pageSize": 100},
+            params={
+                "readMask": "name,title,storefrontAddress,websiteUri",
+                "pageSize": 100,
+            },
             timeout=(GMB_CONNECT_TIMEOUT, GMB_READ_TIMEOUT),
         )
         resp.raise_for_status()
@@ -352,13 +354,12 @@ def list_locations(account_name: str) -> list[dict]:
         logger.error(f"[GMBPublisher] Connection error fetching locations: {e}")
         raise
     except Exception as e:
-        logger.error(f"[GMBPublisher] Failed to fetch locations for {account_name}: {e}")
+        logger.error(f"[GMBPublisher] Failed to fetch locations for {account_name} via Info API: {e}")
         raise
 
     locs = resp.json().get("locations", [])
 
-    # v4 API returns fully-qualified names (accounts/{id}/locations/{id})
-    # v1 API returns short names (locations/{id}) — prefix those just in case
+    # Business Information API v1 returns short names (locations/{id}) — prefix with account
     for loc in locs:
         if loc.get("name", "").startswith("locations/"):
             loc["name"] = f"{account_name}/{loc['name']}"

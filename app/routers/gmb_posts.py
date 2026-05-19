@@ -437,10 +437,13 @@ def _get_post_or_404(post_id: int, db: Session) -> GMBPost:
 
 
 def _resolve_profile_id(post: GMBPost, db: Session) -> str:
-    if post.profile_id:
+    def _is_full_location(val: str) -> bool:
+        return bool(val) and "/locations/" in val and not val.startswith("http")
+
+    if post.profile_id and _is_full_location(post.profile_id):
         return post.profile_id
     business = db.query(Business).filter(Business.id == post.business_id).first()
-    if business and getattr(business, "gmb_url", None):
+    if business and getattr(business, "gmb_url", None) and _is_full_location(business.gmb_url):
         return business.gmb_url
     try:
         from app.services.gmb_publisher import get_first_location
