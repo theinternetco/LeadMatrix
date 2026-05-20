@@ -529,7 +529,7 @@ function ImageUploader({ mediaUrl, onMediaUrlChange, onError }: { mediaUrl: stri
           </button>
         ))}
       </div>
-      <input ref={fileRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleFileChange} />
+      <input ref={fileRef} type="file" accept="image/jpeg,image/png" style={{ display: 'none' }} onChange={handleFileChange} />
       {tab === 'upload' && (
         <>
           {uploading ? (

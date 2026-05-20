@@ -105,7 +105,7 @@ except (ImportError, Exception) as e:
 UPLOADS_DIR = os.path.join(os.path.dirname(__file__), "static", "uploads")
 os.makedirs(UPLOADS_DIR, exist_ok=True)
 
-ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp", "image/gif"}
+ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png"}
 MAX_UPLOAD_BYTES    = 10 * 1024 * 1024  # 10 MB
 
 # Base URL for uploaded files — change to your production domain when deploying
@@ -458,7 +458,7 @@ async def upload_media(file: UploadFile = File(...)):
     if file.content_type not in ALLOWED_IMAGE_TYPES:
         raise HTTPException(
             status_code=400,
-            detail=f"File type '{file.content_type}' not allowed. Use JPG, PNG, WEBP, or GIF."
+            detail=f"File type '{file.content_type}' not supported by Google Business. Please upload a JPG or PNG image."
         )
 
     # ── Read + size check ─────────────────────────────────────
@@ -470,7 +470,7 @@ async def upload_media(file: UploadFile = File(...)):
         )
 
     # ── Safe unique filename ──────────────────────────────────
-    ext_map  = {"image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "image/gif": "gif"}
+    ext_map  = {"image/jpeg": "jpg", "image/png": "png"}
     ext      = ext_map.get(file.content_type, "jpg")
     filename = f"{uuid.uuid4().hex}.{ext}"
     dest     = os.path.join(UPLOADS_DIR, filename)
