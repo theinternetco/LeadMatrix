@@ -962,7 +962,7 @@ def export_post_history(
     ws.title = month_name[:31]
 
     # ── Header ─────────────────────────────────────────────────────────────────
-    headers = ["Client / Business", "Title", "Content", "Type", "Status", "Scheduled Date", "Published Date"]
+    headers = ["Client / Business", "Title", "Type", "Status", "Scheduled Date", "Published Date"]
     header_fill = PatternFill("solid", fgColor="6366F1")
     header_font = Font(bold=True, color="FFFFFF", size=11)
     for col, h in enumerate(headers, 1):
@@ -1001,8 +1001,7 @@ def export_post_history(
 
         values = [
             r.business_name,
-            r.title or "",
-            r.content or "",
+            (r.content or "")[:100],
             r.post_type or "",
             status_str.upper(),
             _fmt_dt(r.scheduled_date),
@@ -1014,7 +1013,7 @@ def export_post_history(
             cell.alignment = Alignment(wrap_text=(col == 3), vertical="top")
 
     # ── Column widths ─────────────────────────────────────────────────────────
-    col_widths = [28, 30, 60, 12, 14, 22, 22]
+    col_widths = [28, 50, 12, 14, 22, 22]
     for i, w in enumerate(col_widths, 1):
         ws.column_dimensions[get_column_letter(i)].width = w
 
