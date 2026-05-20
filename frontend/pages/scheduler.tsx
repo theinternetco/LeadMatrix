@@ -541,7 +541,7 @@ function ImageUploader({ mediaUrl, onMediaUrlChange, onError }: { mediaUrl: stri
             <div className={`sc-dropzone${dragging ? ' drag' : ''}`} onClick={() => fileRef.current?.click()} onDragOver={(e) => { e.preventDefault(); setDragging(true); }} onDragLeave={() => setDragging(false)} onDrop={handleDrop}>
               <div className="sc-dropzone-icon"><Icon d={IC.image} size={18} color="var(--accent)" /></div>
               <div className="sc-dropzone-title">{dragging ? 'Drop image here' : 'Drag & drop or click to browse'}</div>
-              <div className="sc-dropzone-sub">JPG, PNG, WEBP, GIF — max 10 MB</div>
+              <div className="sc-dropzone-sub">JPG, PNG — max 10 MB</div>
               <button type="button" className="sc-dropzone-btn" onClick={(e) => { e.stopPropagation(); fileRef.current?.click(); }}><Icon d={IC.upload} size={12} color="white" /> Choose File</button>
             </div>
           ) : (
