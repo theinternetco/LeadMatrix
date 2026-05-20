@@ -1006,7 +1006,7 @@ function PostRow({ post, isSelected, bizName, onSelect, onPublish, onDelete }: {
                 {post.cta_type && <span className="sc-drawer-chip"><Icon d={IC.zap} size={11} color="var(--accent)" /> CTA: {post.cta_type}{post.cta_value ? ` → ${post.cta_value}` : ''}</span>}
                 {post.media_url && <span className="sc-drawer-chip">📷 Has image</span>}
                 {post.profile_id && <span className="sc-drawer-chip" style={{ fontFamily: 'monospace', fontSize: '.67rem', maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{post.profile_id}</span>}
-                {post.error_log && <span className="sc-drawer-chip sc-drawer-chip-err"><Icon d={IC.alert} size={11} color="#be123c" />{post.error_log.slice(0, 100)}</span>}
+                {post.error_log && <span className="sc-drawer-chip sc-drawer-chip-err" style={{ whiteSpace: 'normal', wordBreak: 'break-all' }}><Icon d={IC.alert} size={11} color="#be123c" />{post.error_log}</span>}
               </div>
             </div>
           </td>

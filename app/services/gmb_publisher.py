@@ -661,8 +661,9 @@ def publish_post(
         raise
 
     if not resp.ok:
-        logger.error(f"[GMBPublisher] API Error {resp.status_code}: {resp.text[:400]}")
-        resp.raise_for_status()
+        gmb_error = resp.text[:600]
+        logger.error(f"[GMBPublisher] API Error {resp.status_code}: {gmb_error}")
+        raise Exception(f"GMB API {resp.status_code}: {gmb_error}")
 
     result = resp.json()
     logger.info(f"[GMBPublisher] ✅ Post published: {result.get('name', '?')}")
