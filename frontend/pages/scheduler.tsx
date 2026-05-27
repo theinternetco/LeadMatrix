@@ -1077,17 +1077,21 @@ export default function SchedulerPage() {
 
   const fetchPosts = () => {
     setPostsLoading(true);
-    axios.get(`${API_BASE}/api/gmb-posts?limit=100`).then((r) => {
-      const arr: GMBPost[] = Array.isArray(r.data) ? r.data : r.data?.items || [];
+    Promise.all([
+      axios.get(`${API_BASE}/api/gmb-posts?limit=200`),
+      axios.get(`${API_BASE}/api/gmb-posts/stats/summary`),
+    ]).then(([postsRes, statsRes]) => {
+      const arr: GMBPost[] = Array.isArray(postsRes.data) ? postsRes.data : postsRes.data?.items || [];
       setPosts(arr);
+      const s = statsRes.data;
       setStats({
-        total: arr.length,
-        published: arr.filter((p) => p.status === 'published').length,
-        scheduled: arr.filter((p) => p.status === 'scheduled').length,
-        failed: arr.filter((p) => p.status === 'failed').length,
-        draft: arr.filter((p) => p.status === 'draft').length,
-        pending: arr.filter((p) => p.status === 'pending').length,
-        ai_generated: arr.filter((p) => p.ai_generated).length,
+        total:        s.total        ?? arr.length,
+        published:    s.published    ?? 0,
+        scheduled:    s.scheduled    ?? 0,
+        failed:       s.failed       ?? 0,
+        draft:        s.draft        ?? 0,
+        pending:      s.pending      ?? 0,
+        ai_generated: s.ai_generated ?? 0,
       });
     }).catch(() => {}).finally(() => setPostsLoading(false));
   };
