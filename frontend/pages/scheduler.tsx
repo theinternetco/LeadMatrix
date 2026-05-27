@@ -794,30 +794,6 @@ function AutoPostPanel({ businesses, onSuccess, showToast }: { businesses: Busin
 
   return (
     <div className="sc-auto-panel">
-      {/* Hero Info */}
-      <div className="sc-auto-hero">
-        <div className="sc-auto-hero-icon">
-          <Icon d={IC.sparkles} size={20} color="white" />
-        </div>
-        <div>
-          <div className="sc-auto-hero-title">AI Auto-Post</div>
-          <div className="sc-auto-hero-sub">Select one or more businesses + schedule time. AI writes a unique topic, description & image for each — zero input needed.</div>
-        </div>
-      </div>
-
-      {/* How It Works */}
-      <div style={{ padding: '2px 0 6px' }}>
-        <div style={{ fontSize: '.7rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.6px', color: 'var(--text3)', marginBottom: 8 }}>How it works</div>
-        <div className="sc-auto-steps">
-          {['Picks best content angle per business (rotates 6 types)','Writes SEO-optimized post for each city & category','Generates professional AI image per post via FLUX.1','Saves all posts to scheduler — auto-publishes at set time'].map((s, i) => (
-            <div key={i} className="sc-auto-step">
-              <div className="sc-auto-step-num">{i + 1}</div>
-              <span>{s}</span>
-            </div>
-          ))}
-        </div>
-      </div>
-
       {/* Form */}
       <div className="sc-auto-field">
         <div className="sc-label">
