@@ -422,6 +422,26 @@ const CSS = `
   .ms-footer { display:flex; align-items:center; justify-content:space-between; padding:8px 14px; border-top:1px solid var(--border2); background:var(--bg); font-size:.72rem; color:var(--text3); font-weight:600; }
   .ms-clear { background:none; border:none; cursor:pointer; font-size:.72rem; color:var(--red); font-family:inherit; font-weight:600; padding:0; }
   .ms-clear:hover { opacity:.7; }
+
+  /* ── Sidebar ── */
+  .sc-sidebar-overlay { position:fixed; inset:0; background:rgba(0,0,0,0.32); z-index:299; backdrop-filter:blur(2px); -webkit-backdrop-filter:blur(2px); animation:sc-fade-in .18s ease; }
+  @keyframes sc-fade-in { from{opacity:0} to{opacity:1} }
+  .sc-sidebar { position:fixed; top:0; left:0; height:100vh; width:252px; background:var(--surface); border-right:1.5px solid var(--border); z-index:300; display:flex; flex-direction:column; box-shadow:8px 0 32px rgba(0,0,0,0.1); animation:sc-slide-in .22s cubic-bezier(0.16,1,0.3,1); }
+  @keyframes sc-slide-in { from{transform:translateX(-100%)} to{transform:translateX(0)} }
+  .sc-sidebar-head { padding:14px 16px; border-bottom:1px solid var(--border); display:flex; align-items:center; justify-content:space-between; }
+  .sc-sidebar-brand { display:flex; align-items:center; gap:8px; }
+  .sc-sidebar-brand-dot { width:28px; height:28px; border-radius:8px; background:linear-gradient(135deg,#6366f1,#8b5cf6); display:flex; align-items:center; justify-content:center; }
+  .sc-sidebar-brand-name { font-size:.88rem; font-weight:700; color:var(--text1); }
+  .sc-sidebar-close { width:28px; height:28px; display:flex; align-items:center; justify-content:center; border-radius:7px; border:1.5px solid var(--border); background:transparent; cursor:pointer; color:var(--text2); transition:all .12s; font-size:16px; }
+  .sc-sidebar-close:hover { background:var(--bg); color:var(--text1); }
+  .sc-sidebar-nav { flex:1; padding:10px; overflow-y:auto; }
+  .sc-sidebar-section { font-size:.62rem; font-weight:700; text-transform:uppercase; letter-spacing:.08em; color:var(--text3); padding:10px 10px 6px; }
+  .sc-sidebar-link { display:flex; align-items:center; gap:10px; padding:9px 11px; border-radius:9px; text-decoration:none; font-size:.83rem; font-weight:600; color:var(--text2); transition:all .14s; margin-bottom:1px; }
+  .sc-sidebar-link:hover { background:var(--bg); color:var(--text1); }
+  .sc-sidebar-link.active { background:var(--accentL); color:var(--accent); }
+  .sc-sidebar-link-icon { width:28px; height:28px; border-radius:7px; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+  .sc-menu-btn { width:32px; height:32px; display:flex; align-items:center; justify-content:center; border-radius:8px; border:1.5px solid var(--border); background:transparent; cursor:pointer; color:var(--text2); transition:all .12s; margin-right:4px; }
+  .sc-menu-btn:hover { background:var(--bg); color:var(--text1); }
 `;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -1030,6 +1050,7 @@ export default function SchedulerPage() {
   const [selectedPostId, setSelectedPostId] = useState<number | null>(null);
   const [charCount, setCharCount] = useState(0);
   const [formMode, setFormMode] = useState<FormMode>('auto');
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const showToast = (msg: string, type: 'success' | 'error' | 'info') => setToast({ msg, type });
 
@@ -1143,8 +1164,46 @@ export default function SchedulerPage() {
     <div className="sc-page">
       <style>{CSS}</style>
 
+      {/* Sidebar overlay */}
+      {sidebarOpen && <div className="sc-sidebar-overlay" onClick={() => setSidebarOpen(false)} />}
+
+      {/* Sidebar */}
+      {sidebarOpen && (
+        <aside className="sc-sidebar">
+          <div className="sc-sidebar-head">
+            <div className="sc-sidebar-brand">
+              <div className="sc-sidebar-brand-dot"><Icon d={IC.trend} size={13} color="white" /></div>
+              <span className="sc-sidebar-brand-name">LeadMatrix</span>
+            </div>
+            <button className="sc-sidebar-close" onClick={() => setSidebarOpen(false)}>×</button>
+          </div>
+          <nav className="sc-sidebar-nav">
+            <div className="sc-sidebar-section">Navigation</div>
+            <Link href="/dashboard" className="sc-sidebar-link" onClick={() => setSidebarOpen(false)}>
+              <div className="sc-sidebar-link-icon" style={{ background: '#6366f118' }}><Icon d={IC.trend} size={15} color="#6366f1" /></div>
+              Dashboard
+            </Link>
+            <Link href="/businesses-list" className="sc-sidebar-link" onClick={() => setSidebarOpen(false)}>
+              <div className="sc-sidebar-link-icon" style={{ background: '#06b6d418' }}><Icon d={IC.post} size={15} color="#06b6d4" /></div>
+              Businesses
+            </Link>
+            <Link href="/rankings" className="sc-sidebar-link" onClick={() => setSidebarOpen(false)}>
+              <div className="sc-sidebar-link-icon" style={{ background: '#10b98118' }}><Icon d={IC.trend} size={15} color="#10b981" /></div>
+              Rankings
+            </Link>
+            <Link href="/scheduler" className="sc-sidebar-link active" onClick={() => setSidebarOpen(false)}>
+              <div className="sc-sidebar-link-icon" style={{ background: '#6366f118' }}><Icon d={IC.calendar} size={15} color="#6366f1" /></div>
+              Scheduler
+            </Link>
+          </nav>
+        </aside>
+      )}
+
       <header className="sc-topbar">
         <div className="sc-topbar-left">
+          <button className="sc-menu-btn" onClick={() => setSidebarOpen(true)} aria-label="Open menu">
+            <Icon d="M3 12h18M3 6h18M3 18h18" size={15} />
+          </button>
           <Link href="/" className="sc-brand">
             <div className="sc-brand-dot"><Icon d={IC.trend} size={13} color="white" /></div>
             <span className="sc-brand-name">LeadMatrix</span>
@@ -1162,7 +1221,6 @@ export default function SchedulerPage() {
           >
             <Icon d="M12 15V3m0 12l-4-4m4 4l4-4M2 17l.621 2.485A2 2 0 0 0 4.561 21h14.878a2 2 0 0 0 1.94-1.515L22 17" size={13} /> Export
           </a>
-          <Link href="/businesses-list" className="sc-btn sc-btn-ghost"><Icon d={IC.back} size={13} /> Back</Link>
         </div>
       </header>
 
