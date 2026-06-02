@@ -22,8 +22,8 @@ from app.services.post_history import record_post, update_post_status
 router = APIRouter(redirect_slashes=False)
 logger = logging.getLogger("gmb_posts")
 
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
-IMGBB_API_KEY      = os.getenv("IMGBB_API_KEY", "")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+IMGBB_API_KEY  = os.getenv("IMGBB_API_KEY", "")
 
 ROUTER_VERSION = "2.0"
 
@@ -1302,21 +1302,18 @@ class AIPostRequest(BaseModel):
     scheduled_at: Optional[str] = None  # ISO string → scheduled; None → draft
 
 
-def _call_openrouter(prompt: str) -> str:
-    if not OPENROUTER_API_KEY:
-        raise RuntimeError("OPENROUTER_API_KEY not set")
+def _call_gemini(prompt: str) -> str:
+    if not GEMINI_API_KEY:
+        raise RuntimeError("GEMINI_API_KEY not set")
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
     resp = _requests.post(
-        "https://openrouter.ai/api/v1/chat/completions",
-        headers={"Authorization": f"Bearer {OPENROUTER_API_KEY}", "Content-Type": "application/json"},
-        json={
-            "model":      "google/gemini-flash-1.5",
-            "messages":   [{"role": "user", "content": prompt}],
-            "max_tokens": 600,
-        },
+        url,
+        headers={"Content-Type": "application/json"},
+        json={"contents": [{"parts": [{"text": prompt}]}]},
         timeout=40,
     )
     resp.raise_for_status()
-    return resp.json()["choices"][0]["message"]["content"].strip()
+    return resp.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
 
 
 def _generate_post_text(topic: str, name: str, city: str, category: str, keywords: list) -> str:
@@ -1333,7 +1330,7 @@ def _generate_post_text(topic: str, name: str, city: str, category: str, keyword
         "- No hashtags\n"
         "- Output the post text only, nothing else"
     )
-    return _call_openrouter(prompt)
+    return _call_gemini(prompt)
 
 
 def _generate_and_upload_image(topic: str, name: str, category: str) -> str:
@@ -1363,8 +1360,8 @@ def _generate_and_upload_image(topic: str, name: str, category: str) -> str:
 
 @router.post("/ai-generate")
 async def ai_generate(req: AIGenerateRequest, db: Session = Depends(get_db)):
-    if not OPENROUTER_API_KEY:
-        raise HTTPException(status_code=503, detail="OPENROUTER_API_KEY not configured")
+    if not GEMINI_API_KEY:
+        raise HTTPException(status_code=503, detail="GEMINI_API_KEY not configured")
 
     business = db.query(Business).filter(Business.id == req.business_id).first()
     if not business:
