@@ -714,227 +714,269 @@ function MultiBusinessSelect({
 }
 
 // ── AutoPostPanel ─────────────────────────────────────────────────────────────
-function AutoPostPanel({ businesses, onSuccess, showToast }: { businesses: Business[]; onSuccess: () => void; showToast: (msg: string, type: 'success' | 'error' | 'info') => void }) {
-  const [businessIds, setBusinessIds] = useState<number[]>([]);
-  const [scheduledAt, setScheduledAt] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [step, setStep] = useState(0); // 0=idle, 1=topic, 2=desc, 3=image, 4=done
-  const [previews, setPreviews] = useState<AutoPostPreview[]>([]);
+type AutoStep = 'form' | 'loading' | 'preview';
 
-  const STEPS = ['Selecting topic & content angle…', 'Writing post description…', 'Generating AI image…', 'Saving to scheduler…'];
+interface AIPreview {
+  text:      string;
+  image_url: string;
+}
+
+function AutoPostPanel({ businesses, onSuccess, showToast }: { businesses: Business[]; onSuccess: () => void; showToast: (msg: string, type: 'success' | 'error' | 'info') => void }) {
+  const [businessId,  setBusinessId]  = useState<number | ''>('');
+  const [topic,       setTopic]       = useState('');
+  const [scheduledAt, setScheduledAt] = useState('');
+  const [scheduleOn,  setScheduleOn]  = useState(false);
+
+  const [step,       setStep]       = useState<AutoStep>('form');
+  const [loadMsg,    setLoadMsg]    = useState('');
+  const [preview,    setPreview]    = useState<AIPreview | null>(null);
+  const [editedText, setEditedText] = useState('');
+  const [regenLoading, setRegenLoading] = useState(false);
+  const [posting,    setPosting]    = useState(false);
+
+  const LOAD_STEPS = [
+    { msg: 'Writing your post with Gemini…', delay: 0 },
+    { msg: 'Generating image with AI…',      delay: 5000 },
+    { msg: 'Uploading image…',               delay: 18000 },
+  ];
 
   const handleGenerate = async () => {
-    if (businessIds.length === 0) { showToast('Please select at least one business', 'error'); return; }
-    if (!scheduledAt) { showToast('Please pick a schedule date & time', 'error'); return; }
+    if (!businessId) { showToast('Please select a business', 'error'); return; }
+    if (!topic.trim()) { showToast('Please enter a topic', 'error'); return; }
+    if (scheduleOn && !scheduledAt) { showToast('Please pick a schedule date & time', 'error'); return; }
 
-    setLoading(true);
-    setPreviews([]);
-    setStep(1);
+    setStep('loading');
+    setPreview(null);
 
-    const stepTimer = (s: number, delay: number) => setTimeout(() => setStep(s), delay);
-    stepTimer(2, 3000);
-    stepTimer(3, 7000);
+    let msgIdx = 0;
+    setLoadMsg(LOAD_STEPS[0].msg);
+    const timers = LOAD_STEPS.slice(1).map((s) =>
+      setTimeout(() => { setLoadMsg(s.msg); }, s.delay)
+    );
 
     try {
-      const isoDate = new Date(scheduledAt).toISOString();
-      const res = await axios.post(`${API_BASE}/api/gmb-posts/auto-generate`, {
-        business_ids: businessIds,
-        scheduled_at: isoDate,
+      const res = await axios.post(`${API_BASE}/api/gmb-posts/ai-generate`, {
+        topic,
+        business_id: businessId,
       });
-      setStep(4);
-      const bulk = res.data;
-      setPreviews(bulk.posts || []);
-      const n = (bulk.posts || []).length;
-      if (bulk.errors?.length) {
-        showToast(`Generated ${n} post(s). ${bulk.errors.length} business(es) failed.`, 'info');
-      } else {
-        showToast(`${n} AI post(s) generated! Review below.`, 'info');
-      }
+      timers.forEach(clearTimeout);
+      setPreview(res.data);
+      setEditedText(res.data.text);
+      setStep('preview');
     } catch (err: any) {
+      timers.forEach(clearTimeout);
       showToast(extractErrorMsg(err), 'error');
-      setStep(0);
-    } finally {
-      setLoading(false);
+      setStep('form');
     }
   };
 
-  const handleConfirmAll = async () => {
-    const postIds = previews.map((p) => p.post_id);
+  const handleRegenerateImage = async () => {
+    if (!businessId || !topic) return;
+    setRegenLoading(true);
     try {
-      await axios.post(`${API_BASE}/api/gmb-posts/bulk-confirm`, { post_ids: postIds });
-      setPreviews([]);
-      setStep(0);
-      setBusinessIds([]);
-      setScheduledAt('');
-      onSuccess();
-      showToast(`${postIds.length} post(s) scheduled successfully! ⚡`, 'success');
+      const res = await axios.post(`${API_BASE}/api/gmb-posts/ai-regenerate-image`, {
+        topic,
+        business_id: businessId,
+      });
+      setPreview((prev) => prev ? { ...prev, image_url: res.data.image_url } : prev);
+      showToast('Image regenerated', 'info');
     } catch (err: any) {
       showToast(extractErrorMsg(err), 'error');
+    } finally {
+      setRegenLoading(false);
     }
   };
 
-  const handleDiscardOne = async (postId: number) => {
-    try { await axios.delete(`${API_BASE}/api/gmb-posts/${postId}`); } catch {}
-    const remaining = previews.filter((p) => p.post_id !== postId);
-    setPreviews(remaining);
-    if (remaining.length === 0) setStep(0);
-    showToast('Post discarded', 'info');
-  };
+  const handlePost = async (postNow: boolean) => {
+    if (!preview || !businessId) return;
+    setPosting(true);
+    try {
+      const scheduled = !postNow && scheduleOn && scheduledAt
+        ? new Date(scheduledAt).toISOString()
+        : null;
 
-  const handleDiscardAll = async () => {
-    for (const p of previews) {
-      try { await axios.delete(`${API_BASE}/api/gmb-posts/${p.post_id}`); } catch {}
+      await axios.post(`${API_BASE}/api/gmb-posts/ai-post`, {
+        business_id:  businessId,
+        text:         editedText,
+        image_url:    preview.image_url,
+        topic,
+        scheduled_at: scheduled,
+      });
+
+      showToast(scheduled ? 'Post scheduled successfully!' : 'Post saved as draft!', 'success');
+      setStep('form');
+      setPreview(null);
+      setTopic('');
+      setScheduledAt('');
+      setBusinessId('');
+      onSuccess();
+    } catch (err: any) {
+      showToast(extractErrorMsg(err), 'error');
+    } finally {
+      setPosting(false);
     }
-    setPreviews([]);
-    setStep(0);
-    showToast('All posts discarded', 'info');
   };
 
-  const firstPreview = previews[0] ?? null;
+  const charCount = editedText.length;
+  const charCls   = charCount > 1400 ? 'over' : charCount > 1000 ? 'warn' : '';
+  const charPct   = Math.min((charCount / 1500) * 100, 100);
 
-  return (
+  // ── FORM ──────────────────────────────────────────────────────────────────
+  if (step === 'form') return (
     <div className="sc-auto-panel">
-      {/* Form */}
       <div className="sc-auto-field">
-        <div className="sc-label">
-          Businesses
-          {businessIds.length > 0 && <span className="sc-label-note">{businessIds.length} selected</span>}
-        </div>
-        <MultiBusinessSelect
-          businesses={businesses}
-          selectedIds={businessIds}
-          onChange={setBusinessIds}
-          disabled={loading}
-          placeholder="Select businesses…"
-        />
+        <div className="sc-label">Business</div>
+        <select
+          className="sc-select"
+          value={businessId}
+          onChange={(e) => setBusinessId(e.target.value ? Number(e.target.value) : '')}
+        >
+          <option value="">Select a business…</option>
+          {businesses.map((b) => (
+            <option key={b.id} value={b.id}>
+              {b.business_name || b.name}{b.city ? ` — ${b.city}` : ''}
+            </option>
+          ))}
+        </select>
       </div>
 
       <div className="sc-auto-field">
-        <div className="sc-label">Schedule Date & Time</div>
+        <div className="sc-label">Topic</div>
         <input
           className="sc-input"
-          type="datetime-local"
-          value={scheduledAt}
-          min={new Date(Date.now() + 60000).toISOString().slice(0, 16)}
-          onChange={(e) => setScheduledAt(e.target.value)}
-          disabled={loading}
-          style={{ background: 'white' }}
+          type="text"
+          value={topic}
+          onChange={(e) => setTopic(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && handleGenerate()}
+          placeholder="e.g. summer plumbing tips, new service launch…"
         />
-        {scheduledAt && (
-          <div style={{ fontSize: '.7rem', color: '#6d28d9', marginTop: 5, fontWeight: 600 }}>
-            Will publish {new Date(scheduledAt).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
-          </div>
-        )}
       </div>
 
-      {/* Progress Steps (during generation) */}
-      {loading && step > 0 && (
-        <div className="sc-auto-progress">
-          <div className="sc-auto-progress-title">
-            <div className="sc-spinner" style={{ borderColor: 'rgba(124,58,237,.3)', borderTopColor: '#7c3aed' }} />
-            Generating {businessIds.length > 1 ? `${businessIds.length} posts` : 'your post'}…
-          </div>
-          <div className="sc-auto-progress-steps">
-            {STEPS.map((s, i) => {
-              const idx = i + 1;
-              const state = idx < step ? 'done' : idx === step ? 'active' : 'pending';
-              return (
-                <div key={i} className={`sc-auto-progress-step ${state}`}>
-                  <div className={`sc-step-icon ${state}`}>{state === 'done' ? '✓' : idx}</div>
-                  {s}
-                </div>
-              );
-            })}
-          </div>
+      <div className="sc-toggle-row" style={{ marginBottom: 12 }}>
+        <div className="sc-toggle-info">
+          <span className="sc-toggle-title">Schedule for later</span>
+          <span className="sc-toggle-sub">Auto-publish at a specific date &amp; time</span>
+        </div>
+        <button type="button" className={`sc-toggle-btn ${scheduleOn ? 'on' : 'off'}`} onClick={() => { setScheduleOn((v) => !v); setScheduledAt(''); }}>
+          <div className="sc-toggle-thumb" />
+        </button>
+      </div>
+
+      {scheduleOn && (
+        <div className="sc-schedule-panel">
+          <div className="sc-schedule-panel-title"><Icon d={IC.calendar} size={13} color="#92400e" /> Pick date &amp; time</div>
+          <input
+            className="sc-input"
+            type="datetime-local"
+            value={scheduledAt}
+            min={new Date(Date.now() + 60000).toISOString().slice(0, 16)}
+            onChange={(e) => setScheduledAt(e.target.value)}
+            style={{ background: 'white' }}
+          />
+          {scheduledAt && (
+            <div style={{ fontSize: '.7rem', color: '#92400e', marginTop: 5, fontWeight: 600 }}>
+              Will publish {new Date(scheduledAt).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+            </div>
+          )}
         </div>
       )}
 
-      {/* Generate Button */}
-      {previews.length === 0 && (
-        <button className="sc-auto-submit" onClick={handleGenerate} disabled={loading}>
-          {loading ? (
-            <><div className="sc-spinner" /> Generating AI Post{businessIds.length > 1 ? 's' : ''}…</>
-          ) : (
-            <><Icon d={IC.sparkles} size={16} color="white" /> ⚡ Generate & Schedule{businessIds.length > 1 ? ` (${businessIds.length})` : ''}</>
-          )}
-        </button>
-      )}
+      <button className="sc-auto-submit" onClick={handleGenerate} disabled={!businessId || !topic.trim()}>
+        <Icon d={IC.sparkles} size={16} color="white" /> Generate Post
+      </button>
+    </div>
+  );
 
-      {/* Preview — Single Business */}
-      {previews.length === 1 && !loading && firstPreview && (
-        <div className="sc-preview-card">
-          <div className="sc-preview-head">
-            <div className="sc-preview-head-title">
-              <Icon d={IC.eye} size={13} color="#7c3aed" />
-              AI Preview — Review before confirming
-            </div>
+  // ── LOADING ───────────────────────────────────────────────────────────────
+  if (step === 'loading') return (
+    <div className="sc-auto-panel">
+      <div className="sc-auto-progress">
+        <div className="sc-auto-progress-title">
+          <div className="sc-spinner" style={{ borderColor: 'rgba(124,58,237,.3)', borderTopColor: '#7c3aed' }} />
+          {loadMsg}
+        </div>
+        <div style={{ fontSize: '.73rem', color: '#6d28d9', marginTop: 4 }}>This may take 20–40 seconds…</div>
+      </div>
+    </div>
+  );
+
+  // ── PREVIEW ───────────────────────────────────────────────────────────────
+  if (step === 'preview' && preview) return (
+    <div className="sc-auto-panel">
+      <div className="sc-preview-card">
+        <div className="sc-preview-head">
+          <div className="sc-preview-head-title">
+            <Icon d={IC.eye} size={13} color="#7c3aed" /> AI Preview — Edit &amp; Confirm
           </div>
-          {firstPreview.image_url ? (
-            <img className="sc-preview-img" src={firstPreview.image_url} alt="AI Generated" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+          <button
+            type="button"
+            onClick={() => { setStep('form'); setPreview(null); }}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text3)', fontSize: 18, lineHeight: 1, display: 'flex' }}
+          >×</button>
+        </div>
+
+        {/* Image */}
+        <div style={{ position: 'relative' }}>
+          {preview.image_url ? (
+            <img className="sc-preview-img" src={preview.image_url} alt="AI Generated" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
           ) : (
             <div className="sc-preview-img-fallback"><Icon d={IC.image} size={28} color="#a78bfa" /></div>
           )}
-          <div className="sc-preview-body">
-            <div className="sc-preview-topic">{firstPreview.topic}</div>
-            <div className="sc-preview-desc">{firstPreview.description}</div>
-            <div className="sc-preview-meta">
-              {firstPreview.content_angle && <span className="sc-preview-chip">✦ {ANGLE_LABELS[firstPreview.content_angle] || firstPreview.content_angle}</span>}
-              <span className="sc-preview-chip">📅 {fmt(firstPreview.scheduled_at)}</span>
-              <span className="sc-preview-chip">🤖 AI Generated</span>
-            </div>
-          </div>
-          <div className="sc-preview-actions">
-            <button className="sc-preview-confirm" onClick={handleConfirmAll}>
-              <Icon d={IC.check} size={13} color="white" /> Confirm & Schedule
+          <div style={{ position: 'absolute', bottom: 8, right: 8 }}>
+            <button
+              type="button"
+              onClick={handleRegenerateImage}
+              disabled={regenLoading}
+              style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 12px', borderRadius: 8, background: 'rgba(15,23,42,.75)', backdropFilter: 'blur(4px)', color: 'white', border: 'none', fontSize: '.72rem', fontWeight: 700, fontFamily: 'inherit', cursor: regenLoading ? 'not-allowed' : 'pointer', opacity: regenLoading ? .7 : 1 }}
+            >
+              {regenLoading
+                ? <><div className="sc-spinner" style={{ width: 11, height: 11 }} /> Regenerating…</>
+                : <><Icon d={IC.refresh} size={11} color="white" /> New image</>}
             </button>
-            <button className="sc-preview-discard" onClick={() => handleDiscardOne(firstPreview.post_id)}>Discard</button>
           </div>
         </div>
-      )}
 
-      {/* Preview — Multiple Businesses */}
-      {previews.length > 1 && !loading && (
-        <div className="sc-preview-card">
-          <div className="sc-preview-head">
-            <div className="sc-preview-head-title">
-              <Icon d={IC.eye} size={13} color="#7c3aed" />
-              {previews.length} Posts Generated — Review & Confirm
-            </div>
+        {/* Editable text */}
+        <div className="sc-preview-body" style={{ gap: 8 }}>
+          <div style={{ fontSize: '.7rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.6px', color: 'var(--text3)' }}>Post text — edit freely</div>
+          <textarea
+            className="sc-textarea"
+            rows={7}
+            value={editedText}
+            maxLength={1500}
+            onChange={(e) => setEditedText(e.target.value)}
+            style={{ background: '#fafbff', border: '1.5px solid #c7d2fe' }}
+          />
+          <div className="sc-char-row">
+            <div className="sc-char-bar-wrap"><div className={`sc-char-bar ${charCls}`} style={{ width: `${charPct}%` }} /></div>
+            <span className={`sc-char-count ${charCls}`}>{charCount}/1500</span>
           </div>
-          <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {previews.map((p) => {
-              const biz = businesses.find((b) => b.id === p.business_id);
-              return (
-                <div key={p.post_id} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 12px', background: 'var(--bg)', borderRadius: 9, border: '1px solid var(--border2)' }}>
-                  <div style={{ width: 34, height: 34, borderRadius: 9, background: 'linear-gradient(135deg,#7c3aed,#6366f1)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontSize: '.8rem', fontWeight: 700, flexShrink: 0 }}>
-                    {(biz?.business_name || biz?.name || '?').charAt(0).toUpperCase()}
-                  </div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: '.78rem', fontWeight: 700, color: 'var(--text1)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {biz?.business_name || biz?.name || `Business #${p.business_id}`}
-                    </div>
-                    <div style={{ fontSize: '.72rem', color: 'var(--text2)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.topic}</div>
-                    {p.content_angle && (
-                      <span className="sc-preview-chip" style={{ marginTop: 4, display: 'inline-flex' }}>✦ {ANGLE_LABELS[p.content_angle] || p.content_angle}</span>
-                    )}
-                  </div>
-                  <button type="button" className="sc-icon-btn" title="Discard this post" onClick={() => handleDiscardOne(p.post_id)} style={{ marginTop: 2 }}>
-                    <Icon d={IC.trash} size={12} />
-                  </button>
-                </div>
-              );
-            })}
-          </div>
-          <div className="sc-preview-actions">
-            <button className="sc-preview-confirm" onClick={handleConfirmAll}>
-              <Icon d={IC.check} size={13} color="white" /> Confirm All {previews.length} Posts
-            </button>
-            <button className="sc-preview-discard" onClick={handleDiscardAll}>Discard All</button>
+          <div className="sc-preview-meta">
+            <span className="sc-preview-chip">🤖 AI Generated</span>
+            <span className="sc-preview-chip">✦ Topic: {topic}</span>
           </div>
         </div>
-      )}
+
+        {/* Actions */}
+        <div className="sc-preview-actions" style={{ flexDirection: 'column', gap: 8 }}>
+          {scheduleOn && scheduledAt ? (
+            <button className="sc-preview-confirm" onClick={() => handlePost(false)} disabled={posting || !editedText.trim()}>
+              {posting ? <><div className="sc-spinner" style={{ width: 13, height: 13 }} /> Scheduling…</> : <><Icon d={IC.calendar} size={13} color="white" /> Schedule Post</>}
+            </button>
+          ) : (
+            <button className="sc-preview-confirm" onClick={() => handlePost(true)} disabled={posting || !editedText.trim()}>
+              {posting ? <><div className="sc-spinner" style={{ width: 13, height: 13 }} /> Saving…</> : <><Icon d={IC.check} size={13} color="white" /> Save as Draft</>}
+            </button>
+          )}
+          <button className="sc-preview-discard" style={{ width: '100%', textAlign: 'center' }} onClick={() => { setStep('form'); setPreview(null); }}>
+            Discard &amp; Start Over
+          </button>
+        </div>
+      </div>
     </div>
   );
+
+  return null;
 }
 
 // ── PostRow ───────────────────────────────────────────────────────────────────
@@ -1175,6 +1217,10 @@ export default function SchedulerPage() {
               <div className="sc-sidebar-link-icon" style={{ background: '#6366f118' }}><Icon d={IC.calendar} size={15} color="#6366f1" /></div>
               Scheduler
             </Link>
+            <Link href="/business-settings" className="sc-sidebar-link" onClick={() => setSidebarOpen(false)}>
+              <div className="sc-sidebar-link-icon" style={{ background: '#f59e0b18' }}><Icon d={IC.edit} size={15} color="#f59e0b" /></div>
+              Biz Settings
+            </Link>
           </nav>
         </aside>
       )}
@@ -1225,7 +1271,7 @@ export default function SchedulerPage() {
                 </div>
                 <div>
                   <div className="sc-card-title">{formMode === 'auto' ? 'AI Auto-Post' : 'Create Manual Post'}</div>
-                  <div className="sc-card-sub">{formMode === 'auto' ? 'Zero input — AI writes topic, text & image' : 'Full control — write your own post'}</div>
+                  <div className="sc-card-sub">{formMode === 'auto' ? 'Enter a topic — AI writes the post & generates an image' : 'Full control — write your own post'}</div>
                 </div>
               </div>
             </div>

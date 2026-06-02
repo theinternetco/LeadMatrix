@@ -144,6 +144,7 @@ def run_migrations():
         "ALTER TABLE businesses ADD COLUMN IF NOT EXISTS website TEXT",
         "ALTER TABLE businesses ADD COLUMN IF NOT EXISTS location TEXT",
         "ALTER TABLE businesses ADD COLUMN IF NOT EXISTS status VARCHAR(50) DEFAULT 'active'",
+        "ALTER TABLE businesses ADD COLUMN IF NOT EXISTS keywords JSONB DEFAULT '[]'",
 
         # ── reviews ──────────────────────────────────────────────────────────
         "ALTER TABLE reviews ADD COLUMN IF NOT EXISTS google_review_id VARCHAR(255)",

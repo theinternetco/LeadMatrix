@@ -285,6 +285,10 @@ class BusinessUpdate(BaseModel):
     gmb_url:  str | None = None
 
 
+class BusinessKeywordsUpdate(BaseModel):
+    keywords: list[str]
+
+
 class InsightCreate(BaseModel):
     business_id:    int
     date:           str
@@ -970,6 +974,7 @@ def get_all_businesses(limit: int = Query(200, ge=1, le=1000), db: Session = Dep
                     "gmb_url":      b.gmb_url,
                     "gmburl":       b.gmb_url,
                     "status":       b.status,
+                    "keywords":     b.keywords or [],
                 }
                 for b in businesses
             ],
@@ -1058,6 +1063,23 @@ def update_business(business_id: int, payload: BusinessUpdate, db: Session = Dep
                 "gmb_url": business.gmb_url,
             },
         }
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.patch("/api/businesses/{business_id}/keywords")
+def update_business_keywords(business_id: int, payload: BusinessKeywordsUpdate, db: Session = Depends(get_db)):
+    if not MODELS_AVAILABLE:
+        raise HTTPException(status_code=503, detail="Models not available")
+    business = db.query(Business).filter(Business.id == business_id).first()
+    if not business:
+        raise HTTPException(status_code=404, detail="Business not found")
+    business.keywords = [k.strip() for k in payload.keywords if k.strip()]
+    try:
+        db.commit()
+        db.refresh(business)
+        return {"success": True, "keywords": business.keywords}
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=str(e))

@@ -1,8 +1,14 @@
 import logging
+import os
+import asyncio
+import random
+import base64
 from datetime import datetime, timezone
 from typing import List, Optional
+from urllib.parse import quote as url_quote
 
 import io
+import requests as _requests
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
@@ -15,6 +21,9 @@ from app.services.post_history import record_post, update_post_status
 
 router = APIRouter(redirect_slashes=False)
 logger = logging.getLogger("gmb_posts")
+
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
+IMGBB_API_KEY      = os.getenv("IMGBB_API_KEY", "")
 
 ROUTER_VERSION = "2.0"
 
@@ -1269,3 +1278,166 @@ def reschedule_post(
     db.commit()
     db.refresh(post)
     return GmbPostOut.from_orm_post(post)
+
+
+# ==========================================
+# AI AUTO-POST ENDPOINTS
+# ==========================================
+
+class AIGenerateRequest(BaseModel):
+    topic:       str
+    business_id: int
+
+
+class AIRegenerateImageRequest(BaseModel):
+    topic:       str
+    business_id: int
+
+
+class AIPostRequest(BaseModel):
+    business_id:  int
+    text:         str
+    image_url:    str
+    topic:        str
+    scheduled_at: Optional[str] = None  # ISO string → scheduled; None → draft
+
+
+def _call_openrouter(prompt: str) -> str:
+    if not OPENROUTER_API_KEY:
+        raise RuntimeError("OPENROUTER_API_KEY not set")
+    resp = _requests.post(
+        "https://openrouter.ai/api/v1/chat/completions",
+        headers={"Authorization": f"Bearer {OPENROUTER_API_KEY}", "Content-Type": "application/json"},
+        json={
+            "model":      "google/gemini-flash-1.5",
+            "messages":   [{"role": "user", "content": prompt}],
+            "max_tokens": 600,
+        },
+        timeout=40,
+    )
+    resp.raise_for_status()
+    return resp.json()["choices"][0]["message"]["content"].strip()
+
+
+def _generate_post_text(topic: str, name: str, city: str, category: str, keywords: list) -> str:
+    kw_str = ", ".join(keywords) if keywords else ""
+    kw_line = f"Naturally include these keywords if relevant: {kw_str}" if kw_str else ""
+    prompt = (
+        f"Write a Google Business post for {name}, a {category or 'local'} business"
+        + (f" in {city}" if city else "")
+        + f".\n\nTopic: {topic}\n{kw_line}\n\n"
+        "Rules:\n"
+        "- Under 1500 characters\n"
+        "- Friendly, professional tone\n"
+        "- End with a short call to action\n"
+        "- No hashtags\n"
+        "- Output the post text only, nothing else"
+    )
+    return _call_openrouter(prompt)
+
+
+def _generate_and_upload_image(topic: str, name: str, category: str) -> str:
+    image_prompt = (
+        f"Professional high-quality photo for a {category or 'local'} business, "
+        f"{topic}, clean modern style, square 1:1 format, bright and inviting"
+    )
+    encoded = url_quote(image_prompt)
+    seed    = random.randint(1, 999999)
+    poll_url = f"https://image.pollinations.ai/prompt/{encoded}?width=1024&height=1024&nologo=true&model=flux&seed={seed}"
+
+    img_resp = _requests.get(poll_url, timeout=90)
+    img_resp.raise_for_status()
+
+    if not IMGBB_API_KEY:
+        raise RuntimeError("IMGBB_API_KEY not set — cannot upload generated image")
+
+    img_b64 = base64.b64encode(img_resp.content).decode("utf-8")
+    up_resp = _requests.post(
+        "https://api.imgbb.com/1/upload",
+        data={"key": IMGBB_API_KEY, "image": img_b64, "expiration": 2592000},
+        timeout=30,
+    )
+    up_resp.raise_for_status()
+    return up_resp.json()["data"]["url"]
+
+
+@router.post("/ai-generate")
+async def ai_generate(req: AIGenerateRequest, db: Session = Depends(get_db)):
+    if not OPENROUTER_API_KEY:
+        raise HTTPException(status_code=503, detail="OPENROUTER_API_KEY not configured")
+
+    business = db.query(Business).filter(Business.id == req.business_id).first()
+    if not business:
+        raise HTTPException(status_code=404, detail="Business not found")
+
+    name     = business.business_name or business.name or ""
+    city     = business.city     or ""
+    category = business.category or ""
+    keywords = business.keywords or []
+
+    try:
+        text = await asyncio.to_thread(_generate_post_text, req.topic, name, city, category, keywords)
+    except Exception as e:
+        logger.error("AI text generation failed: %s", e)
+        raise HTTPException(status_code=502, detail=f"Text generation failed: {e}")
+
+    try:
+        image_url = await asyncio.to_thread(_generate_and_upload_image, req.topic, name, category)
+    except Exception as e:
+        logger.error("AI image generation failed: %s", e)
+        raise HTTPException(status_code=502, detail=f"Image generation failed: {e}")
+
+    return {"text": text, "image_url": image_url}
+
+
+@router.post("/ai-regenerate-image")
+async def ai_regenerate_image(req: AIRegenerateImageRequest, db: Session = Depends(get_db)):
+    business = db.query(Business).filter(Business.id == req.business_id).first()
+    if not business:
+        raise HTTPException(status_code=404, detail="Business not found")
+
+    name     = business.business_name or business.name or ""
+    category = business.category or ""
+
+    try:
+        image_url = await asyncio.to_thread(_generate_and_upload_image, req.topic, name, category)
+    except Exception as e:
+        logger.error("AI image regeneration failed: %s", e)
+        raise HTTPException(status_code=502, detail=f"Image generation failed: {e}")
+
+    return {"image_url": image_url}
+
+
+@router.post("/ai-post")
+def ai_post(req: AIPostRequest, db: Session = Depends(get_db)):
+    business = db.query(Business).filter(Business.id == req.business_id).first()
+    if not business:
+        raise HTTPException(status_code=404, detail="Business not found")
+
+    scheduled_dt = None
+    status       = "draft"
+    if req.scheduled_at:
+        scheduled_dt = parse_datetime_flexible(req.scheduled_at)
+        status       = "scheduled"
+
+    post = GMBPost(
+        business_id   = req.business_id,
+        description   = req.text,
+        media_url     = req.image_url or None,
+        post_type     = "update",
+        status        = status,
+        scheduled_date = scheduled_dt,
+        ai_generated  = True,
+        ai_topic      = req.topic[:300] if req.topic else None,
+        profile_id    = business.gmb_url,
+    )
+    db.add(post)
+    db.commit()
+    db.refresh(post)
+
+    try:
+        record_post(db, post, "ai_created")
+    except Exception:
+        pass
+
+    return {"success": True, "post_id": post.id, "status": status}

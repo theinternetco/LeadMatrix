@@ -314,10 +314,11 @@ export default function Dashboard() {
 
             {sidebar && <p style={{ padding: '16px 16px 4px', fontSize: '0.62rem', fontWeight: 700, color: '#cbd5e1', letterSpacing: '1px', textTransform: 'uppercase' }}>Quick Access</p>}
             {([
-              { href: '/businesses-list', label: 'Businesses', icon: P.list },
-              { href: '/rankings',        label: 'Rankings',   icon: P.rank },
-              { href: '/gmb-scraper',     label: 'Scraper',    icon: P.scraper },
-              { href: '/scheduler',       label: 'Scheduler',  icon: P.posts },
+              { href: '/businesses-list',   label: 'Businesses',  icon: P.list },
+              { href: '/rankings',          label: 'Rankings',    icon: P.rank },
+              { href: '/gmb-scraper',       label: 'Scraper',     icon: P.scraper },
+              { href: '/scheduler',         label: 'Scheduler',   icon: P.posts },
+              { href: '/business-settings', label: 'Biz Settings', icon: P.target },
             ]).map(l => (
               <Link key={l.href} href={l.href} className="nav-btn" style={{ display: 'flex', alignItems: 'center', gap: 9, textDecoration: 'none', padding: sidebar ? '9px 14px' : '9px 0', justifyContent: sidebar ? 'flex-start' : 'center', borderLeft: '3px solid transparent', color: '#64748b', fontSize: '0.83rem', fontWeight: 500 }}>
                 <I d={l.icon} s={14} c="#94a3b8" />

@@ -33,6 +33,7 @@ class Business(Base):
     state           = Column(String)
     gmb_url         = Column(String)
     status          = Column(String, default="active")
+    keywords        = Column(JSON, default=list)
 
     metrics          = relationship("BusinessMetric",     back_populates="business", cascade="all, delete-orphan")
     competitors      = relationship("CompetitorTracking", back_populates="business", cascade="all, delete-orphan")
