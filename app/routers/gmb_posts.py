@@ -1298,8 +1298,14 @@ def _call_gemini(prompt: str) -> str:
     if not GEMINI_API_KEY:
         raise RuntimeError("GEMINI_API_KEY not set")
     import time
-    # Try primary model first, fall back to flash-lite if 429
-    models = ["gemini-2.0-flash", "gemini-2.0-flash-lite", "gemini-1.5-flash-latest"]
+    # Try models in order — fall back on 429 (quota) or 404 (not available)
+    models = [
+        "gemini-2.0-flash",
+        "gemini-2.0-flash-lite",
+        "gemini-1.5-flash-002",
+        "gemini-1.5-flash-001",
+        "gemini-1.5-pro-002",
+    ]
     base   = "https://generativelanguage.googleapis.com/v1beta/models"
     delays = [5, 15]
     last_err = None
@@ -1312,15 +1318,15 @@ def _call_gemini(prompt: str) -> str:
                 json={"contents": [{"parts": [{"text": prompt}]}]},
                 timeout=40,
             )
-            if resp.status_code == 429:
+            if resp.status_code in (429, 404):
                 try:
                     body = resp.json()
-                    reason = body.get("error", {}).get("message", "quota exceeded")
+                    reason = body.get("error", {}).get("message", resp.text[:200])
                 except Exception:
                     reason = resp.text[:200]
-                logger.warning("Gemini 429 on %s (attempt %d): %s", model, attempt, reason)
-                if delay is None:
-                    last_err = f"Rate limit on {model}: {reason}"
+                logger.warning("Gemini %d on %s (attempt %d): %s", resp.status_code, model, attempt, reason)
+                if resp.status_code == 404 or delay is None:
+                    last_err = f"{resp.status_code} on {model}: {reason}"
                     break  # try next model
                 time.sleep(delay)
                 continue
