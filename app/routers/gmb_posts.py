@@ -452,26 +452,18 @@ def _resolve_profile_id(post: GMBPost, db: Session) -> str:
     if post.profile_id and _is_full_location(post.profile_id):
         return post.profile_id
     business = db.query(Business).filter(Business.id == post.business_id).first()
+    # Prefer the dedicated gmb_location_id field (API resource path)
+    if business and getattr(business, "gmb_location_id", None) and _is_full_location(business.gmb_location_id):
+        return business.gmb_location_id
+    # Fall back to gmb_url for backwards compat (some businesses may have had API path saved there)
     if business and getattr(business, "gmb_url", None) and _is_full_location(business.gmb_url):
         return business.gmb_url
-    try:
-        from app.services.gmb_publisher import get_first_location
-        loc = get_first_location()
-        if loc:
-            logger.info("Auto-detected GMB location for post id=%s: %s", post.id, loc)
-            if business:
-                business.gmb_url = loc
-                db.commit()
-            return loc
-    except Exception as e:
-        logger.warning("Could not auto-detect GMB location: %s", e)
+    biz_display = (getattr(business, "business_name", None) or getattr(business, "name", None) or f"id={post.business_id}") if business else f"id={post.business_id}"
     raise HTTPException(
         status_code=422,
         detail=(
-            "No GMB profile_id found for this business. "
-            "Pass profile_id in the request body "
-            "(format: accounts/ACCOUNT_ID/locations/LOCATION_ID), "
-            "or set gmb_url on the business record."
+            f"No GMB location set for business '{biz_display}'. "
+            "Go to Businesses → Set GMB Location to assign the correct Google Business Profile location."
         ),
     )
 
@@ -1305,7 +1297,7 @@ class AIPostRequest(BaseModel):
 def _call_gemini(prompt: str) -> str:
     if not GEMINI_API_KEY:
         raise RuntimeError("GEMINI_API_KEY not set")
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={GEMINI_API_KEY}"
     resp = _requests.post(
         url,
         headers={"Content-Type": "application/json"},

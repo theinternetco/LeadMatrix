@@ -117,6 +117,7 @@ def run_migrations():
     Apply any missing columns added to models after initial table creation.
     Safe to run on every startup — uses IF NOT EXISTS, ignores already-exists errors.
 
+    ✅ v5.2: Added businesses.gmb_location_id (dedicated GMB API resource path)
     ✅ v5.1: Added gmb_posts ai_generated / ai_topic / content_angle
              Added support for new 'pending' status in gmb_posts
     ✅ v5.0: Added reviews.updated_at
@@ -145,6 +146,7 @@ def run_migrations():
         "ALTER TABLE businesses ADD COLUMN IF NOT EXISTS location TEXT",
         "ALTER TABLE businesses ADD COLUMN IF NOT EXISTS status VARCHAR(50) DEFAULT 'active'",
         "ALTER TABLE businesses ADD COLUMN IF NOT EXISTS keywords JSONB DEFAULT '[]'",
+        "ALTER TABLE businesses ADD COLUMN IF NOT EXISTS gmb_location_id VARCHAR(512)",
 
         # ── reviews ──────────────────────────────────────────────────────────
         "ALTER TABLE reviews ADD COLUMN IF NOT EXISTS google_review_id VARCHAR(255)",

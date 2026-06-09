@@ -32,6 +32,7 @@ class Business(Base):
     city            = Column(String)
     state           = Column(String)
     gmb_url         = Column(String)
+    gmb_location_id = Column(String(512))  # GMB API resource path: accounts/{id}/locations/{id}
     status          = Column(String, default="active")
     keywords        = Column(JSON, default=list)
 
