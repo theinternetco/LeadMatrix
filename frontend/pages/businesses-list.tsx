@@ -17,6 +17,13 @@ interface Business {
   address: string;
   website: string;
   status: string;
+  gmb_location_id?: string;
+}
+
+interface GmbLocation {
+  name: string;
+  title: string;
+  address: string;
 }
 
 type SortField = 'id' | 'name' | 'category' | 'city' | 'status';
@@ -253,6 +260,28 @@ const GLOBAL_CSS = `
   /* Checkbox */
   .bl-checkbox { width: 16px; height: 16px; cursor: pointer; accent-color: var(--accent); }
 
+  /* GMB location badge */
+  .bl-badge-gmb-set { background: #d1fae5; color: #065f46; }
+  .bl-badge-gmb-unset { background: #fef3c7; color: #92400e; }
+
+  /* GMB location button */
+  .bl-action-btn.gmb { background: #fffbeb; color: #b45309; border-color: #fde68a; }
+  .bl-action-btn.gmb:hover { background: #fef3c7; }
+  .bl-action-btn.gmb.set { background: #f0fdf4; color: #15803d; border-color: #bbf7d0; }
+  .bl-action-btn.gmb.set:hover { background: #dcfce7; }
+
+  /* Modal overlay */
+  .bl-modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 9998; display: flex; align-items: center; justify-content: center; padding: 24px; backdrop-filter: blur(4px); }
+  .bl-modal { background: var(--surface); border: 1.5px solid var(--border); border-radius: 18px; padding: 28px; max-width: 500px; width: 100%; box-shadow: 0 24px 80px rgba(0,0,0,.18); animation: modalIn .2s ease; }
+  @keyframes modalIn { from { opacity:0; transform: scale(.95) translateY(-8px); } to { opacity:1; transform: scale(1) translateY(0); } }
+  .bl-modal-title { font-size: 1rem; font-weight: 800; color: var(--text1); margin-bottom: 4px; }
+  .bl-modal-sub { font-size: 0.8rem; color: var(--text2); margin-bottom: 20px; }
+  .bl-modal-label { font-size: 0.76rem; font-weight: 600; color: var(--text2); margin-bottom: 7px; display: block; }
+  .bl-modal-select { width: 100%; padding: 10px 12px; border: 1.5px solid var(--border); border-radius: 9px; font-size: 0.84rem; color: var(--text1); background: var(--bg); font-family: inherit; outline: none; transition: border-color .15s, box-shadow .15s; }
+  .bl-modal-select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(99,102,241,.1); }
+  .bl-modal-footer { display: flex; gap: 8px; justify-content: flex-end; margin-top: 20px; }
+  .bl-modal-current { font-size: 0.76rem; color: var(--text3); margin-top: 8px; font-family: monospace; word-break: break-all; }
+
   /* Responsive */
   @media (max-width: 768px) {
     .bl-topbar { padding: 0 16px; }
@@ -289,6 +318,13 @@ export default function BusinessesList() {
   const [showToastState, setShowToastState]     = useState(false);
   const [toastMessage, setToastMessage]         = useState('');
   const [toastType, setToastType]               = useState<'success'|'error'>('success');
+
+  // GMB Location modal
+  const [gmbModal, setGmbModal]               = useState<{ biz: Business } | null>(null);
+  const [gmbLocations, setGmbLocations]       = useState<GmbLocation[]>([]);
+  const [gmbLoading, setGmbLoading]           = useState(false);
+  const [gmbSaving, setGmbSaving]             = useState(false);
+  const [gmbSelected, setGmbSelected]         = useState('');
 
   useEffect(() => {
     const saved = localStorage.getItem('darkMode');
@@ -417,6 +453,36 @@ export default function BusinessesList() {
 
   const hasFilters = searchTerm || filterCity || filterCategory || filterStatus;
 
+  const openGmbModal = async (biz: Business) => {
+    setGmbModal({ biz });
+    setGmbSelected(biz.gmb_location_id || '');
+    setGmbLocations([]);
+    setGmbLoading(true);
+    try {
+      const r = await axios.get(`${API_BASE}/api/businesses/gmb-locations`);
+      setGmbLocations(r.data.locations || []);
+    } catch {
+      showToast('Could not fetch GMB locations. Is the server running?', 'error');
+    } finally {
+      setGmbLoading(false);
+    }
+  };
+
+  const saveGmbLocation = async () => {
+    if (!gmbModal) return;
+    setGmbSaving(true);
+    try {
+      await axios.patch(`${API_BASE}/api/businesses/${gmbModal.biz.id}`, { gmb_location_id: gmbSelected || null });
+      showToast(`GMB location saved for ${getBizName(gmbModal.biz)}`);
+      setGmbModal(null);
+      fetchBusinesses();
+    } catch {
+      showToast('Failed to save GMB location', 'error');
+    } finally {
+      setGmbSaving(false);
+    }
+  };
+
   // ── Sorting indicator ────────────────────────────────────────
   const SortIcon = ({ field }: { field: SortField }) =>
     sortField === field
@@ -457,6 +523,54 @@ export default function BusinessesList() {
         <div className="bl-toast">
           <span className="bl-toast-dot" style={{ background: toastType === 'error' ? '#ef4444' : '#10b981' }} />
           {toastMessage}
+        </div>
+      )}
+
+      {/* ── GMB Location Modal ── */}
+      {gmbModal && (
+        <div className="bl-modal-overlay" onClick={e => { if (e.target === e.currentTarget) setGmbModal(null); }}>
+          <div className="bl-modal">
+            <div className="bl-modal-title">Set GMB Location</div>
+            <div className="bl-modal-sub">
+              Assign the correct Google Business Profile location for <strong>{getBizName(gmbModal.biz)}</strong>.
+              This tells the scheduler exactly which profile to post to.
+            </div>
+            <label className="bl-modal-label">Google Business Profile Location</label>
+            {gmbLoading ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 0', color: 'var(--text3)', fontSize: '0.83rem' }}>
+                <div className="bl-spinner" style={{ width: 18, height: 18, borderWidth: 2 }} />
+                Fetching locations from Google…
+              </div>
+            ) : gmbLocations.length === 0 ? (
+              <div style={{ color: 'var(--red)', fontSize: '0.82rem', padding: '10px 0' }}>
+                No locations found. Make sure the server is running and GMB token is valid.
+              </div>
+            ) : (
+              <select className="bl-modal-select" value={gmbSelected} onChange={e => setGmbSelected(e.target.value)}>
+                <option value="">— Select a location —</option>
+                {gmbLocations.map(loc => (
+                  <option key={loc.name} value={loc.name}>
+                    {loc.title}{loc.address ? ` · ${loc.address}` : ''}
+                  </option>
+                ))}
+              </select>
+            )}
+            {gmbModal.biz.gmb_location_id && (
+              <div className="bl-modal-current">Current: {gmbModal.biz.gmb_location_id}</div>
+            )}
+            <div className="bl-modal-footer">
+              <button className="bl-btn bl-btn-ghost" onClick={() => setGmbModal(null)} disabled={gmbSaving}>
+                Cancel
+              </button>
+              <button
+                className="bl-btn bl-btn-primary"
+                onClick={saveGmbLocation}
+                disabled={gmbSaving || gmbLoading || !gmbSelected}
+              >
+                {gmbSaving ? 'Saving…' : 'Save Location'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -520,10 +634,10 @@ export default function BusinessesList() {
         {/* Stat Cards */}
         <div className="bl-stats">
           {[
-            { label: 'Total',      value: businesses.length,                                        color: '#6366f1', bg: '#eef2ff', icon: IC.building },
-            { label: 'Active',     value: businesses.filter(b => b.status === 'active').length,     color: '#10b981', bg: '#d1fae5', icon: IC.check    },
-            { label: 'Cities',     value: cities.length,                                            color: '#06b6d4', bg: '#cffafe', icon: IC.pin      },
-            { label: 'Categories', value: categories.length,                                        color: '#f59e0b', bg: '#fef3c7', icon: IC.tag      },
+            { label: 'Total',      value: businesses.length,                                                  color: '#6366f1', bg: '#eef2ff', icon: IC.building },
+            { label: 'Active',     value: businesses.filter(b => b.status === 'active').length,               color: '#10b981', bg: '#d1fae5', icon: IC.check    },
+            { label: 'GMB Linked', value: businesses.filter(b => !!b.gmb_location_id).length,                 color: '#f59e0b', bg: '#fef3c7', icon: IC.pin      },
+            { label: 'Cities',     value: cities.length,                                                      color: '#06b6d4', bg: '#cffafe', icon: IC.pin      },
           ].map((s, i) => (
             <div className="bl-stat" key={i}>
               <div className="bl-stat-icon" style={{ background: s.bg }}>
@@ -676,6 +790,13 @@ export default function BusinessesList() {
                           <Link href={`/analytics/${b.id}`} className="bl-action-btn view" title="Analytics">
                             <Icon d={IC.chart} size={14} />
                           </Link>
+                          <button
+                            className={`bl-action-btn gmb${b.gmb_location_id ? ' set' : ''}`}
+                            title={b.gmb_location_id ? `GMB: ${b.gmb_location_id}` : 'Set GMB Location'}
+                            onClick={() => openGmbModal(b)}
+                          >
+                            <Icon d={IC.pin} size={14} />
+                          </button>
                           <Link href={`/edit-business/${b.id}`} className="bl-action-btn edit" title="Edit">
                             <Icon d={IC.edit} size={14} />
                           </Link>
@@ -756,10 +877,21 @@ export default function BusinessesList() {
                     style={{ background: '#eef2ff', color: '#4338ca', border: '1.5px solid #c7d2fe' }}>
                     <Icon d={IC.chart} size={12} /> Analytics
                   </Link>
-                  <Link href={`/edit-business/${b.id}`} className="bl-card-link"
-                    style={{ background: '#f0fdf4', color: '#15803d', border: '1.5px solid #bbf7d0' }}>
-                    <Icon d={IC.edit} size={12} /> Edit
-                  </Link>
+                  <button
+                    className={`bl-card-link${b.gmb_location_id ? '' : ''}`}
+                    onClick={() => openGmbModal(b)}
+                    style={{
+                      background: b.gmb_location_id ? '#f0fdf4' : '#fffbeb',
+                      color: b.gmb_location_id ? '#15803d' : '#b45309',
+                      border: `1.5px solid ${b.gmb_location_id ? '#bbf7d0' : '#fde68a'}`,
+                      display: 'inline-flex', alignItems: 'center', gap: 5,
+                      padding: '0 12px', height: 30, borderRadius: 7,
+                      fontSize: '0.75rem', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit',
+                    }}
+                    title={b.gmb_location_id ? `GMB: ${b.gmb_location_id}` : 'Set GMB Location'}
+                  >
+                    <Icon d={IC.pin} size={12} /> {b.gmb_location_id ? 'GMB Set' : 'Set GMB'}
+                  </button>
                   <button className="bl-action-btn del" onClick={() => handleDelete(b.id, getBizName(b))} style={{ marginLeft: 'auto' }}>
                     <Icon d={IC.trash} size={13} />
                   </button>

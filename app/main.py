@@ -275,14 +275,15 @@ class BusinessCreate(BaseModel):
 
 class BusinessUpdate(BaseModel):
     """PATCH /api/businesses/{id} — all fields optional."""
-    name:     str | None = None
-    address:  str | None = None
-    phone:    str | None = None
-    website:  str | None = None
-    category: str | None = None
-    city:     str | None = None
-    state:    str | None = None
-    gmb_url:  str | None = None
+    name:            str | None = None
+    address:         str | None = None
+    phone:           str | None = None
+    website:         str | None = None
+    category:        str | None = None
+    city:            str | None = None
+    state:           str | None = None
+    gmb_url:         str | None = None
+    gmb_location_id: str | None = None  # GMB API resource path: accounts/{id}/locations/{id}
 
 
 class BusinessKeywordsUpdate(BaseModel):
@@ -971,16 +972,48 @@ def get_all_businesses(limit: int = Query(200, ge=1, le=1000), db: Session = Dep
                     "city":         b.city,
                     "phone":        b.phone_number or b.phone,
                     "website":      b.website,
-                    "gmb_url":      b.gmb_url,
-                    "gmburl":       b.gmb_url,
-                    "status":       b.status,
-                    "keywords":     b.keywords or [],
+                    "gmb_url":        b.gmb_url,
+                    "gmburl":         b.gmb_url,
+                    "gmb_location_id": getattr(b, "gmb_location_id", None),
+                    "status":         b.status,
+                    "keywords":       b.keywords or [],
                 }
                 for b in businesses
             ],
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/businesses/gmb-locations")
+def list_gmb_locations():
+    """
+    List all GMB locations accessible via the authenticated Google account.
+    Must be defined BEFORE the /{business_id} route to avoid path shadowing.
+    Returns: [{"name": "accounts/X/locations/Y", "title": "...", "address": "..."}]
+    """
+    try:
+        from app.services.gmb_publisher import list_accounts, list_locations
+        accounts  = list_accounts()
+        locations = []
+        for acct in accounts:
+            for loc in list_locations(acct["name"]):
+                addr_parts = []
+                addr_obj   = loc.get("storefrontAddress") or {}
+                for key in ("addressLines", "locality", "administrativeArea", "regionCode"):
+                    val = addr_obj.get(key)
+                    if isinstance(val, list):
+                        addr_parts.extend(val)
+                    elif val:
+                        addr_parts.append(val)
+                locations.append({
+                    "name":    loc["name"],
+                    "title":   loc.get("title", loc["name"]),
+                    "address": ", ".join(addr_parts) if addr_parts else "",
+                })
+        return {"success": True, "locations": locations}
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Could not fetch GMB locations: {e}")
 
 
 @app.get("/api/businesses/{business_id}")
@@ -1000,7 +1033,8 @@ def get_business(business_id: int, db: Session = Depends(get_db)):
             "phone":    business.phone_number or business.phone,
             "address":  business.address,
             "website":  business.website,
-            "gmb_url":  business.gmb_url,
+            "gmb_url":         business.gmb_url,
+            "gmb_location_id": getattr(business, "gmb_location_id", None),
         },
     }
 
@@ -1049,6 +1083,9 @@ def update_business(business_id: int, payload: BusinessUpdate, db: Session = Dep
     if payload.gmb_url  is not None:
         business.gmb_url  = payload.gmb_url
         updated_fields.append("gmb_url")
+    if payload.gmb_location_id is not None:
+        business.gmb_location_id = payload.gmb_location_id or None
+        updated_fields.append("gmb_location_id")
 
     try:
         db.commit()
@@ -1058,9 +1095,10 @@ def update_business(business_id: int, payload: BusinessUpdate, db: Session = Dep
             "message":        f"Updated: {', '.join(updated_fields) or 'nothing changed'}",
             "updated_fields": updated_fields,
             "business": {
-                "id":      business.id,
-                "name":    business.business_name or business.name,
-                "gmb_url": business.gmb_url,
+                "id":             business.id,
+                "name":           business.business_name or business.name,
+                "gmb_url":        business.gmb_url,
+                "gmb_location_id": business.gmb_location_id,
             },
         }
     except Exception as e:

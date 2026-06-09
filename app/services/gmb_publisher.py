@@ -736,21 +736,18 @@ def publish_post_to_gmb(post, profile_id: str | None = None) -> dict:
                 business = db.query(Business).filter(Business.id == post.business_id).first()
                 db.close()
                 if business:
-                    location_name = getattr(business, "gmb_url", None)
+                    # Prefer dedicated gmb_location_id; fall back to gmb_url for backwards compat
+                    location_name = getattr(business, "gmb_location_id", None) or getattr(business, "gmb_url", None)
             except Exception as e:
                 logger.warning(f"[GMBPublisher] Could not fetch business for post {post.id}: {e}")
-
-        if not location_name:
-            location_name = get_first_location()
 
         if not location_name:
             return {
                 "success":      False,
                 "gmb_response": None,
                 "error": (
-                    "No GMB location_name found. "
-                    "Set gmb_url on the business record "
-                    "(format: accounts/123/locations/456)."
+                    "No GMB location set for this business. "
+                    "Go to Businesses → click the pin icon → Set GMB Location."
                 ),
             }
 
@@ -772,20 +769,7 @@ def publish_post_to_gmb(post, profile_id: str | None = None) -> dict:
                             "error":        f"Auto-resolve returned invalid location name '{resolved}' (missing /locations/ segment).",
                         }
                     location_name = resolved
-                    logger.info(f"[GMBPublisher] Auto-resolved → {location_name}")
-                    # Persist the resolved path to the business record so future publishes use it directly
-                    try:
-                        from app.database import SessionLocal
-                        from app.models import Business as _Business
-                        _db = SessionLocal()
-                        _biz = _db.query(_Business).filter(_Business.id == post.business_id).first()
-                        if _biz:
-                            _biz.gmb_url = location_name
-                            _db.commit()
-                            logger.info(f"[GMBPublisher] Persisted resolved location to business id={post.business_id}")
-                        _db.close()
-                    except Exception as _pe:
-                        logger.warning(f"[GMBPublisher] Could not persist resolved location: {_pe}")
+                    logger.info(f"[GMBPublisher] Auto-resolved account path → {location_name}")
                 else:
                     return {
                         "success":      False,
