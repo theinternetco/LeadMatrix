@@ -1297,15 +1297,24 @@ class AIPostRequest(BaseModel):
 def _call_gemini(prompt: str) -> str:
     if not GEMINI_API_KEY:
         raise RuntimeError("GEMINI_API_KEY not set")
+    import time
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={GEMINI_API_KEY}"
-    resp = _requests.post(
-        url,
-        headers={"Content-Type": "application/json"},
-        json={"contents": [{"parts": [{"text": prompt}]}]},
-        timeout=40,
-    )
-    resp.raise_for_status()
-    return resp.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
+    delays = [5, 15, 30]
+    for attempt, delay in enumerate(delays + [None], start=1):
+        resp = _requests.post(
+            url,
+            headers={"Content-Type": "application/json"},
+            json={"contents": [{"parts": [{"text": prompt}]}]},
+            timeout=40,
+        )
+        if resp.status_code == 429:
+            if delay is None:
+                resp.raise_for_status()
+            logger.warning("Gemini 429 rate limit (attempt %d/%d) — retrying in %ds", attempt, len(delays) + 1, delay)
+            time.sleep(delay)
+            continue
+        resp.raise_for_status()
+        return resp.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
 
 
 def _generate_post_text(topic: str, name: str, city: str, category: str, keywords: list) -> str:
