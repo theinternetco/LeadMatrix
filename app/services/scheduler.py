@@ -77,13 +77,19 @@ async def _process_due_posts():
                     biz = business_cache[post.business_id]
 
                 # --- Resolve profile_id ---
-                profile_id = post.profile_id or (biz.gmb_url if biz else None)
+                # Prefer gmb_location_id (GMB API resource path set via Set GMB Location UI),
+                # fall back to gmb_url for backwards compat, then post.profile_id
+                profile_id = (
+                    post.profile_id
+                    or (getattr(biz, "gmb_location_id", None) if biz else None)
+                    or (getattr(biz, "gmb_url", None) if biz else None)
+                )
 
                 if not profile_id:
                     post.status    = "failed"
                     post.error_log = (
                         f"Business id={post.business_id}: "
-                        "no profile_id or gmb_url configured"
+                        "no GMB location set — go to Businesses and use Set GMB Location"
                     )
                     post.retry_count = (post.retry_count or 0) + 1
                     db.commit()
