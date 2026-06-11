@@ -319,6 +319,8 @@ export default function BusinessesList() {
   const [toastMessage, setToastMessage]         = useState('');
   const [toastType, setToastType]               = useState<'success'|'error'>('success');
 
+  const [gmbSyncing, setGmbSyncing] = useState(false);
+
   // GMB Location modal
   const [gmbModal, setGmbModal]               = useState<{ biz: Business } | null>(null);
   const [gmbLocations, setGmbLocations]       = useState<GmbLocation[]>([]);
@@ -452,6 +454,24 @@ export default function BusinessesList() {
   };
 
   const hasFilters = searchTerm || filterCity || filterCategory || filterStatus;
+
+  const handleSyncFromGmb = async () => {
+    setGmbSyncing(true);
+    try {
+      const r = await axios.post(`${API_BASE}/api/businesses/sync-from-gmb`);
+      const { created, updated } = r.data;
+      if (created > 0 || updated > 0) {
+        showToast(`Sync done: ${created} new business${created !== 1 ? 'es' : ''}, ${updated} updated`);
+        fetchBusinesses();
+      } else {
+        showToast('Sync done — everything already up to date');
+      }
+    } catch (err: any) {
+      showToast(err?.response?.data?.detail || 'GMB sync failed', 'error');
+    } finally {
+      setGmbSyncing(false);
+    }
+  };
 
   const openGmbModal = async (biz: Business) => {
     setGmbModal({ biz });
@@ -610,6 +630,15 @@ export default function BusinessesList() {
           </button>
           <button className="bl-btn bl-btn-ghost" onClick={handleExportCSV}>
             <Icon d={IC.download} size={14} /> Export
+          </button>
+          <button
+            className="bl-btn bl-btn-ghost"
+            onClick={handleSyncFromGmb}
+            disabled={gmbSyncing}
+            title="Pull all locations from Google Business Profile and add any missing ones"
+          >
+            <Icon d={IC.refresh} size={14} />
+            {gmbSyncing ? 'Syncing…' : 'Sync from GMB'}
           </button>
           <Link href="/gmb-businesses" className="bl-btn bl-btn-primary">
             <Icon d={IC.plus} size={14} color="white" /> Add Business
