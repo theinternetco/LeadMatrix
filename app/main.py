@@ -922,6 +922,140 @@ def get_analytics(
 # BUSINESS CRUD
 # ============================================================
 
+@app.post("/api/businesses/sync-from-gmb")
+def sync_businesses_from_gmb(db: Session = Depends(get_db)):
+    """
+    Fetch every location from the authenticated Google Business Profile account
+    and upsert it into the businesses table.
+    - New locations → created with gmb_location_id set
+    - Existing locations → gmb_location_id filled in if missing, other empty fields updated
+    Must be defined before /{business_id} to avoid path shadowing.
+    """
+    if not MODELS_AVAILABLE:
+        raise HTTPException(status_code=503, detail="Models not available")
+    try:
+        from app.services.gmb_publisher import get_access_token, list_accounts
+        import requests as _gmb_req
+
+        token    = get_access_token()
+        headers  = {"Authorization": f"Bearer {token}"}
+        accounts = list_accounts()
+
+        created_list: list[dict] = []
+        updated_list: list[dict] = []
+
+        for account in accounts:
+            account_name = account.get("name", "")
+            page_token   = None
+
+            while True:
+                params: dict = {
+                    "readMask": "name,title,phoneNumbers,websiteUri,categories,storefrontAddress",
+                    "pageSize": 100,
+                }
+                if page_token:
+                    params["pageToken"] = page_token
+
+                resp = _gmb_req.get(
+                    f"https://mybusinessbusinessinformation.googleapis.com/v1/{account_name}/locations",
+                    headers=headers,
+                    params=params,
+                    timeout=15,
+                )
+                resp.raise_for_status()
+                data       = resp.json()
+                locations  = data.get("locations", [])
+                page_token = data.get("nextPageToken")
+
+                for loc in locations:
+                    raw_name = loc.get("name", "")
+                    # Business Information API returns short names; prefix with account
+                    loc_name = raw_name if "/" in raw_name and "accounts/" in raw_name else f"{account_name}/{raw_name}"
+
+                    title   = loc.get("title", "Unknown")
+                    phone   = (loc.get("phoneNumbers") or {}).get("primaryPhone", "") or ""
+                    website = loc.get("websiteUri", "") or ""
+
+                    addr          = loc.get("storefrontAddress") or {}
+                    address_lines = addr.get("addressLines") or []
+                    address       = ", ".join(address_lines)
+                    city          = addr.get("locality", "") or ""
+                    state         = addr.get("administrativeArea", "") or ""
+
+                    cats     = loc.get("categories") or {}
+                    primary  = cats.get("primaryCategory") or {}
+                    category = primary.get("displayName", "") or ""
+
+                    # Match: gmb_location_id first, then google_place_id, then name
+                    existing = (
+                        db.query(Business).filter(Business.gmb_location_id == loc_name).first()
+                        or db.query(Business).filter(Business.google_place_id == loc_name).first()
+                        or db.query(Business).filter(
+                            (Business.business_name == title) | (Business.name == title)
+                        ).first()
+                    )
+
+                    if existing:
+                        changed = False
+                        if not getattr(existing, "gmb_location_id", None):
+                            existing.gmb_location_id = loc_name
+                            changed = True
+                        if not existing.google_place_id:
+                            existing.google_place_id = loc_name
+                            changed = True
+                        if not (existing.phone or existing.phone_number) and phone:
+                            existing.phone = phone
+                            existing.phone_number = phone
+                            changed = True
+                        if not existing.website and website:
+                            existing.website = website
+                            changed = True
+                        if not existing.city and city:
+                            existing.city = city
+                            changed = True
+                        if not existing.state and state:
+                            existing.state = state
+                            changed = True
+                        if not existing.category and category:
+                            existing.category = category
+                            changed = True
+                        if changed:
+                            updated_list.append({"id": existing.id, "name": title})
+                    else:
+                        new_biz = Business(
+                            name            = title,
+                            business_name   = title,
+                            phone           = phone or "N/A",
+                            phone_number    = phone or "N/A",
+                            website         = website,
+                            address         = address,
+                            city            = city,
+                            state           = state,
+                            category        = category,
+                            gmb_location_id = loc_name,
+                            google_place_id = loc_name,
+                            status          = "active",
+                        )
+                        db.add(new_biz)
+                        db.flush()
+                        created_list.append({"id": new_biz.id, "name": title})
+
+                if not page_token:
+                    break
+
+        db.commit()
+        return {
+            "success":           True,
+            "created":           len(created_list),
+            "updated":           len(updated_list),
+            "new_businesses":    created_list,
+            "updated_businesses": updated_list,
+        }
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=502, detail=f"GMB sync failed: {e}")
+
+
 @app.post("/api/businesses")
 def create_business(business: BusinessCreate, db: Session = Depends(get_db)):
     if not MODELS_AVAILABLE:

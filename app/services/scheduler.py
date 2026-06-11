@@ -164,6 +164,109 @@ async def _process_due_posts():
         db.close()
 
 
+async def _sync_businesses_from_gmb():
+    """
+    Daily job: fetch all locations from Google Business Profile and upsert
+    into the businesses table. Creates new businesses automatically when
+    locations are added to Google Business Manager.
+    """
+    db: Session = SessionLocal()
+    try:
+        from app.services.gmb_publisher import get_access_token, list_accounts
+        import requests as _gmb_req
+
+        token    = get_access_token()
+        headers  = {"Authorization": f"Bearer {token}"}
+        accounts = list_accounts()
+
+        created = updated = 0
+
+        for account in accounts:
+            account_name = account.get("name", "")
+            page_token   = None
+
+            while True:
+                params: dict = {
+                    "readMask": "name,title,phoneNumbers,websiteUri,categories,storefrontAddress",
+                    "pageSize": 100,
+                }
+                if page_token:
+                    params["pageToken"] = page_token
+
+                resp = _gmb_req.get(
+                    f"https://mybusinessbusinessinformation.googleapis.com/v1/{account_name}/locations",
+                    headers=headers,
+                    params=params,
+                    timeout=15,
+                )
+                resp.raise_for_status()
+                data       = resp.json()
+                locations  = data.get("locations", [])
+                page_token = data.get("nextPageToken")
+
+                for loc in locations:
+                    raw_name = loc.get("name", "")
+                    loc_name = raw_name if "/" in raw_name and "accounts/" in raw_name else f"{account_name}/{raw_name}"
+                    title    = loc.get("title", "Unknown")
+                    phone    = (loc.get("phoneNumbers") or {}).get("primaryPhone", "") or ""
+                    website  = loc.get("websiteUri", "") or ""
+                    addr     = loc.get("storefrontAddress") or {}
+                    city     = addr.get("locality", "") or ""
+                    state    = addr.get("administrativeArea", "") or ""
+                    cats     = loc.get("categories") or {}
+                    category = (cats.get("primaryCategory") or {}).get("displayName", "") or ""
+
+                    from app.models import Business
+                    existing = (
+                        db.query(Business).filter(Business.gmb_location_id == loc_name).first()
+                        or db.query(Business).filter(Business.google_place_id == loc_name).first()
+                        or db.query(Business).filter(
+                            (Business.business_name == title) | (Business.name == title)
+                        ).first()
+                    )
+
+                    if existing:
+                        changed = False
+                        if not getattr(existing, "gmb_location_id", None):
+                            existing.gmb_location_id = loc_name
+                            changed = True
+                        if not existing.google_place_id:
+                            existing.google_place_id = loc_name
+                            changed = True
+                        if changed:
+                            updated += 1
+                    else:
+                        new_biz = Business(
+                            name            = title,
+                            business_name   = title,
+                            phone           = phone or "N/A",
+                            phone_number    = phone or "N/A",
+                            website         = website,
+                            city            = city,
+                            state           = state,
+                            category        = category,
+                            gmb_location_id = loc_name,
+                            google_place_id = loc_name,
+                            status          = "active",
+                        )
+                        db.add(new_biz)
+                        created += 1
+
+                if not page_token:
+                    break
+
+        db.commit()
+        if created or updated:
+            logger.info("🏢 GMB business sync: %d created, %d updated", created, updated)
+        else:
+            logger.debug("GMB business sync: no changes")
+    except Exception:
+        logger.exception("GMB business sync job crashed")
+        db.rollback()
+    finally:
+        db.close()
+
+
 async def _cleanup_post_history():
     """On or after the 10th of each month, delete previous month's post history entries."""
     now = datetime.now(timezone.utc)
@@ -223,6 +326,14 @@ class GMBScheduler:
                 trigger="interval",
                 hours=24,
                 id="gmb_history_cleanup",
+                replace_existing=True,
+                max_instances=1,
+            )
+            self.scheduler.add_job(
+                _sync_businesses_from_gmb,
+                trigger="interval",
+                hours=24,
+                id="gmb_business_sync",
                 replace_existing=True,
                 max_instances=1,
             )
