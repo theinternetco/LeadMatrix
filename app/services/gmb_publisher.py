@@ -165,6 +165,34 @@ _LOCAL_URL_PATTERNS = (
     "::1",
 )
 
+# GMB rejects images smaller than 250×250px
+_GMB_MIN_WIDTH  = 250
+_GMB_MIN_HEIGHT = 250
+
+
+def _check_image_size(data: bytes) -> bool:
+    """
+    Return True if the image meets GMB's minimum dimensions (250×250px).
+    Returns True (allow) if PIL is unavailable or the image can't be parsed.
+    """
+    try:
+        from PIL import Image as _PILImage
+        from io import BytesIO
+        img = _PILImage.open(BytesIO(data))
+        w, h = img.size
+        if w < _GMB_MIN_WIDTH or h < _GMB_MIN_HEIGHT:
+            logger.warning(
+                "[GMBPublisher] ⚠️  Image too small for GMB: %dx%dpx "
+                "(minimum %dx%dpx). Post will publish without image.",
+                w, h, _GMB_MIN_WIDTH, _GMB_MIN_HEIGHT,
+            )
+            return False
+        logger.debug("[GMBPublisher] Image dimensions OK: %dx%dpx", w, h)
+        return True
+    except Exception as e:
+        logger.debug("[GMBPublisher] Could not check image dimensions: %s — allowing", e)
+        return True
+
 # Print version + resolved token path on import for easy debugging
 print(
     f"[OK] GMB Publisher v{__version__} LOADED | "
@@ -446,6 +474,9 @@ def _upload_to_imgbb(image_url: str) -> Optional[str]:
         img_resp = _requests_lib.get(image_url, timeout=15)
         img_resp.raise_for_status()
 
+        if not _check_image_size(img_resp.content):
+            return None  # too small — caller will skip the image
+
         img_b64 = base64.b64encode(img_resp.content).decode("utf-8")
 
         upload_resp = _requests_lib.post(
@@ -512,8 +543,19 @@ def _resolve_media_url(media_url: str | None) -> str | None:
         logger.warning(f"[GMBPublisher] ⚠️  Invalid URL, skipping: {media_url[:80]}")
         return None
 
-    # Rule 5: valid public URL
+    # Rule 5: valid public URL — validate dimensions before sending to GMB
     logger.info(f"[GMBPublisher] 🖼️  Media URL OK (public): {media_url}")
+    try:
+        img_resp = _requests_lib.get(media_url, timeout=15)
+        img_resp.raise_for_status()
+        if not _check_image_size(img_resp.content):
+            logger.warning("[GMBPublisher] 🚫 Image skipped — too small for GMB (min 250x250px)")
+            return None
+    except Exception as e:
+        logger.warning(
+            "[GMBPublisher] ⚠️  Could not validate image dimensions for %s: %s — sending URL as-is",
+            media_url[:80], e,
+        )
     return media_url
 
 
