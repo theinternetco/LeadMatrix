@@ -198,12 +198,14 @@ def _get_oauth_credentials() -> Optional["Credentials"]:
         raise RuntimeError("Google API libraries not installed.")
 
     creds = None
+    _had_token = False  # track whether we loaded an existing token
 
     gmb_token_json = os.getenv("GMB_TOKEN_JSON")
     if gmb_token_json:
         try:
             token_data = json.loads(gmb_token_json)
             creds = Credentials.from_authorized_user_info(token_data, SCOPES)
+            _had_token = True
             logger.info("[Auth] Token loaded from GMB_TOKEN_JSON env var.")
         except Exception as e:
             logger.warning(f"[Auth] Failed to load token from GMB_TOKEN_JSON: {e}")
@@ -211,6 +213,7 @@ def _get_oauth_credentials() -> Optional["Credentials"]:
     if not creds and os.path.exists(OAUTH_TOKEN_FILE):
         try:
             creds = Credentials.from_authorized_user_file(OAUTH_TOKEN_FILE, SCOPES)
+            _had_token = True
             logger.info(f"[Auth] Token loaded from: {OAUTH_TOKEN_FILE}")
         except Exception as e:
             logger.warning(f"[Auth] Failed to load token file: {e}")
@@ -226,26 +229,49 @@ def _get_oauth_credentials() -> Optional["Credentials"]:
             return creds
         except Exception as e:
             logger.error(f"[Auth] Token refresh failed: {e}")
-            creds = None
+            raise RuntimeError(
+                f"GMB OAuth token refresh failed: {e}. "
+                f"The token at {OAUTH_TOKEN_FILE} is expired and could not be refreshed silently. "
+                "Fix: delete token.json and restart the server from your workstation to re-authenticate via browser."
+            )
 
     if creds and creds.valid:
         return creds
 
-    # No valid token — trigger OAuth flow
+    # Token file exists but has no refresh token and is not valid
+    if _had_token and creds and not creds.valid:
+        raise RuntimeError(
+            "GMB OAuth token is invalid with no refresh token — cannot refresh silently. "
+            f"Fix: delete {OAUTH_TOKEN_FILE} and restart the server from your workstation to re-authenticate via browser."
+        )
+
+    # No valid token at all — run the OAuth browser flow (first-time setup only)
     if not creds:
         client_config = _build_client_config()
 
         if client_config:
             logger.info("[Auth] Using GOOGLE_CLIENT_ID/SECRET from .env for GMB OAuth.")
-            flow  = InstalledAppFlow.from_client_config(client_config, SCOPES)
-            creds = flow.run_local_server(port=0)
+            try:
+                flow  = InstalledAppFlow.from_client_config(client_config, SCOPES)
+                creds = flow.run_local_server(port=0)
+            except Exception as e:
+                raise RuntimeError(
+                    f"GMB OAuth browser flow failed: {e}. "
+                    "Run the server interactively from your workstation (with a browser) to complete first-time auth."
+                )
             _save_token(creds)
             logger.info("[Auth] New OAuth2 token obtained from .env credentials and saved.")
 
         elif os.path.exists(OAUTH_CLIENT_FILE):
             logger.info(f"[Auth] Using oauth_client.json file: {OAUTH_CLIENT_FILE}")
-            flow  = InstalledAppFlow.from_client_secrets_file(OAUTH_CLIENT_FILE, SCOPES)
-            creds = flow.run_local_server(port=0)
+            try:
+                flow  = InstalledAppFlow.from_client_secrets_file(OAUTH_CLIENT_FILE, SCOPES)
+                creds = flow.run_local_server(port=0)
+            except Exception as e:
+                raise RuntimeError(
+                    f"GMB OAuth browser flow failed: {e}. "
+                    "Run the server interactively from your workstation (with a browser) to complete first-time auth."
+                )
             _save_token(creds)
             logger.info("[Auth] New OAuth2 token obtained from file and saved.")
 
@@ -286,6 +312,11 @@ def _save_token(creds: "Credentials"):
         "client_secret": creds.client_secret,
         "scopes":        list(creds.scopes) if creds.scopes else [],
     }
+    # Persist expiry so Credentials.from_authorized_user_info knows when to refresh on reload.
+    # Without this, creds.expired is always False after restart → silent refresh never triggers.
+    if creds.expiry:
+        token_data["expiry"] = creds.expiry.strftime("%Y-%m-%dT%H:%M:%SZ")
+
     with open(OAUTH_TOKEN_FILE, "w") as f:
         json.dump(token_data, f, indent=2)
 
