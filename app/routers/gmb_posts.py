@@ -1362,7 +1362,7 @@ def _generate_and_upload_image(topic: str, name: str, category: str) -> str:
     seed    = random.randint(1, 999999)
     poll_url = f"https://image.pollinations.ai/prompt/{encoded}?width=1024&height=1024&nologo=true&model=flux&seed={seed}"
 
-    img_resp = _requests.get(poll_url, timeout=90)
+    img_resp = _requests.get(poll_url, timeout=30)
     img_resp.raise_for_status()
 
     if not IMGBB_API_KEY:
