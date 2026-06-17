@@ -1300,12 +1300,10 @@ def _call_gemini(prompt: str) -> str:
     import time
     # Try models in order — fall back on 429 (quota) or 404 (not available)
     models = [
+        "gemini-2.5-flash",
+        "gemini-2.5-flash-lite",
         "gemini-2.0-flash",
         "gemini-2.0-flash-lite",
-        "gemini-1.5-flash",
-        "gemini-1.5-flash-latest",
-        "gemini-1.5-pro",
-        "gemini-1.5-pro-latest",
     ]
     base   = "https://generativelanguage.googleapis.com/v1beta/models"
     delays = [5, 15]
