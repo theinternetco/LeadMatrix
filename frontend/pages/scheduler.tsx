@@ -795,7 +795,7 @@ function AutoPostPanel({ businesses, onSuccess, showToast }: { businesses: Busin
         ? new Date(scheduledAt).toISOString()
         : null;
 
-      await axios.post(`${API_BASE}/api/gmb-posts/ai-post`, {
+      const res = await axios.post(`${API_BASE}/api/gmb-posts/ai-post`, {
         business_id:  businessId,
         text:         editedText,
         image_url:    preview.image_url,
@@ -803,7 +803,13 @@ function AutoPostPanel({ businesses, onSuccess, showToast }: { businesses: Busin
         scheduled_at: scheduled,
       });
 
-      showToast(scheduled ? 'Post scheduled successfully!' : 'Post saved as draft!', 'success');
+      if (postNow && res.data.post_id) {
+        await axios.post(`${API_BASE}/api/gmb-posts/${res.data.post_id}/trigger`);
+        showToast('Post published to Google Business!', 'success');
+      } else {
+        showToast('Post scheduled successfully!', 'success');
+      }
+
       setStep('form');
       setPreview(null);
       setTopic('');
@@ -965,7 +971,7 @@ function AutoPostPanel({ businesses, onSuccess, showToast }: { businesses: Busin
             </button>
           ) : (
             <button className="sc-preview-confirm" onClick={() => handlePost(true)} disabled={posting || !editedText.trim()}>
-              {posting ? <><div className="sc-spinner" style={{ width: 13, height: 13 }} /> Saving…</> : <><Icon d={IC.check} size={13} color="white" /> Save as Draft</>}
+              {posting ? <><div className="sc-spinner" style={{ width: 13, height: 13 }} /> Publishing…</> : <><Icon d={IC.zap} size={13} color="white" /> Publish to GMB</>}
             </button>
           )}
           <button className="sc-preview-discard" style={{ width: '100%', textAlign: 'center' }} onClick={() => { setStep('form'); setPreview(null); }}>
