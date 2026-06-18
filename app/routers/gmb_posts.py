@@ -1437,14 +1437,14 @@ def ai_post(req: AIPostRequest, db: Session = Depends(get_db)):
 
     post = GMBPost(
         business_id   = req.business_id,
-        description   = req.text,
+        content       = req.text,
         media_url     = req.image_url or None,
         post_type     = "update",
         status        = status,
         scheduled_date = scheduled_dt,
         ai_generated  = True,
         ai_topic      = req.topic[:300] if req.topic else None,
-        profile_id    = business.gmb_url,
+        profile_id    = getattr(business, "gmb_location_id", None) or business.gmb_url,
     )
     db.add(post)
     db.commit()
