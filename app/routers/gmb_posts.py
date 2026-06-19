@@ -1344,7 +1344,8 @@ def _generate_post_text(topic: str, name: str, city: str, category: str, keyword
         + (f" in {city}" if city else "")
         + f".\n\nTopic: {topic}\n{kw_line}\n\n"
         "Rules:\n"
-        "- Under 1500 characters\n"
+        f"- Start with the topic as the first line: \"{topic}\"\n"
+        "- Under 1500 characters total\n"
         "- Friendly, professional tone\n"
         "- End with a short call to action\n"
         "- No hashtags\n"
