@@ -733,6 +733,8 @@ function AutoPostPanel({ businesses, onSuccess, showToast }: { businesses: Busin
   const [editedText, setEditedText] = useState('');
   const [regenLoading, setRegenLoading] = useState(false);
   const [posting,    setPosting]    = useState(false);
+  const [ctaType,    setCtaType]    = useState('');
+  const [ctaValue,   setCtaValue]   = useState('');
 
   const LOAD_STEPS = [
     { msg: 'Writing your post with Gemini…', delay: 0 },
@@ -801,6 +803,8 @@ function AutoPostPanel({ businesses, onSuccess, showToast }: { businesses: Busin
         image_url:    preview.image_url,
         topic,
         scheduled_at: scheduled,
+        cta_type:     ctaType || null,
+        cta_value:    ctaType && ctaType !== 'call' ? ctaValue.trim() || null : null,
       });
 
       if (postNow && res.data.post_id) {
@@ -815,6 +819,8 @@ function AutoPostPanel({ businesses, onSuccess, showToast }: { businesses: Busin
       setTopic('');
       setScheduledAt('');
       setBusinessId('');
+      setCtaType('');
+      setCtaValue('');
       onSuccess();
     } catch (err: any) {
       showToast(extractErrorMsg(err), 'error');
@@ -961,6 +967,17 @@ function AutoPostPanel({ businesses, onSuccess, showToast }: { businesses: Busin
             <span className="sc-preview-chip">🤖 AI Generated</span>
             <span className="sc-preview-chip">✦ Topic: {topic}</span>
           </div>
+        </div>
+
+        {/* CTA */}
+        <div style={{ padding: '0 16px 12px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <div className="sc-label">Call-to-Action <span style={{ fontWeight: 400, opacity: .7 }}>(optional)</span></div>
+          <select className="sc-select" value={ctaType} onChange={(e) => { setCtaType(e.target.value); setCtaValue(''); }}>
+            {CTA_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+          </select>
+          {ctaType && ctaType !== 'call' && (
+            <input className="sc-input" type="text" value={ctaValue} onChange={(e) => setCtaValue(e.target.value)} placeholder="https://…" />
+          )}
         </div>
 
         {/* Actions */}

@@ -1291,6 +1291,8 @@ class AIPostRequest(BaseModel):
     text:         str
     image_url:    str
     topic:        str
+    cta_type:     Optional[str] = None
+    cta_value:    Optional[str] = None
     scheduled_at: Optional[str] = None  # ISO string → scheduled; None → draft
 
 
@@ -1436,15 +1438,17 @@ def ai_post(req: AIPostRequest, db: Session = Depends(get_db)):
         status       = "scheduled"
 
     post = GMBPost(
-        business_id   = req.business_id,
-        content       = req.text,
-        media_url     = req.image_url or None,
-        post_type     = "update",
-        status        = status,
+        business_id    = req.business_id,
+        content        = req.text,
+        media_url      = req.image_url or None,
+        post_type      = "update",
+        status         = status,
         scheduled_date = scheduled_dt,
-        ai_generated  = True,
-        ai_topic      = req.topic[:300] if req.topic else None,
-        profile_id    = getattr(business, "gmb_location_id", None) or business.gmb_url,
+        ai_generated   = True,
+        ai_topic       = req.topic[:300] if req.topic else None,
+        profile_id     = getattr(business, "gmb_location_id", None) or business.gmb_url,
+        cta_type       = req.cta_type or None,
+        cta_value      = (req.cta_value.strip() or None) if req.cta_value else None,
     )
     db.add(post)
     db.commit()
