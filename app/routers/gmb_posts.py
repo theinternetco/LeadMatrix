@@ -1336,17 +1336,65 @@ def _call_gemini(prompt: str) -> str:
     raise RuntimeError(last_err or "All Gemini models returned 429 — quota exhausted")
 
 
-def _generate_post_text(topic: str, name: str, city: str, category: str, keywords: list) -> str:
+def _get_reference_post_text(db: Session, business_id: int) -> Optional[str]:
+    """
+    Find the most recent post for this business to use as a style/structure
+    reference for new AI generations, so posts stay consistent over time.
+    Checks GMBPost first (covers scheduled/pending/draft/recently-published),
+    then falls back to PostHistory (covers published posts already purged
+    from gmb_posts by the 7-day cleanup job).
+    """
+    recent = (
+        db.query(GMBPost)
+        .filter(GMBPost.business_id == business_id, GMBPost.content.isnot(None), GMBPost.content != "")
+        .order_by(GMBPost.created_at.desc())
+        .first()
+    )
+    if recent and recent.content:
+        return recent.content
+
+    history = (
+        db.query(PostHistory)
+        .filter(PostHistory.business_id == business_id, PostHistory.content.isnot(None), PostHistory.content != "")
+        .order_by(PostHistory.created_at.desc())
+        .first()
+    )
+    if history and history.content:
+        return history.content
+
+    return None
+
+
+def _generate_post_text(
+    topic: str,
+    name: str,
+    city: str,
+    category: str,
+    keywords: list,
+    reference_text: Optional[str] = None,
+) -> str:
     kw_str = ", ".join(keywords) if keywords else ""
     kw_line = f"Naturally include these keywords if relevant: {kw_str}" if kw_str else ""
+    reference_block = (
+        "\nHere is this business's most recent post, for STYLE REFERENCE ONLY — "
+        "match its paragraph structure, tone, pacing, and general format. "
+        "Do NOT reuse its specific facts, offers, or sentences — write entirely new "
+        "content about the new topic below.\n"
+        "---\n"
+        f"{reference_text}\n"
+        "---\n"
+        if reference_text else ""
+    )
     prompt = (
         f"Write a Google Business post for {name}, a {category or 'local'} business"
         + (f" in {city}" if city else "")
-        + f".\n\nTopic: {topic}\n{kw_line}\n\n"
+        + f".\n\nTopic: {topic}\n{kw_line}\n"
+        f"{reference_block}\n"
         "Rules:\n"
         f"- Start with the topic as the first line: \"{topic}\"\n"
-        "- Under 1500 characters total\n"
+        "- Between 1000 and 1500 characters total\n"
         "- Friendly, professional tone\n"
+        "- Write in full, engaging paragraphs — do not use bullet points or lists\n"
         "- End with a short call to action\n"
         "- No hashtags\n"
         "- Output the post text only, nothing else"
@@ -1392,9 +1440,12 @@ async def ai_generate(req: AIGenerateRequest, db: Session = Depends(get_db)):
     city     = business.city     or ""
     category = business.category or ""
     keywords = business.keywords or []
+    reference_text = _get_reference_post_text(db, req.business_id)
 
     try:
-        text = await asyncio.to_thread(_generate_post_text, req.topic, name, city, category, keywords)
+        text = await asyncio.to_thread(
+            _generate_post_text, req.topic, name, city, category, keywords, reference_text
+        )
     except Exception as e:
         logger.error("AI text generation failed: %s", e)
         raise HTTPException(status_code=502, detail=f"Text generation failed: {e}")
