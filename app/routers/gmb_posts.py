@@ -1389,6 +1389,9 @@ def _generate_post_text(
     category: str,
     keywords: list,
     reference_text: Optional[str] = None,
+    address: str = "",
+    phone: str = "",
+    website: str = "",
 ) -> str:
     kw_str = ", ".join(keywords) if keywords else ""
     kw_line = f"Naturally include these keywords if relevant: {kw_str}" if kw_str else ""
@@ -1403,15 +1406,30 @@ def _generate_post_text(
         if reference_text else ""
     )
 
+    details_lines = []
+    if address:
+        details_lines.append(f"- Address: {address}")
+    if phone:
+        details_lines.append(f"- Phone: {phone}")
+    if website:
+        details_lines.append(f"- Website: {website}")
+    details_block = (
+        "\nBusiness details you may reference naturally where relevant (don't force all of them in):\n"
+        + "\n".join(details_lines) + "\n"
+        if details_lines else ""
+    )
+
     def build_prompt(correction: str = "") -> str:
         return (
             f"Write a Google Business post for {name}, a {category or 'local'} business"
             + (f" in {city}" if city else "")
             + f".\n\nTopic: {topic}\n{kw_line}\n"
+            f"{details_block}"
             f"{reference_block}\n"
             f"{correction}"
             "Rules:\n"
             f"- Start with the topic as the first line: \"{topic}\"\n"
+            f"- Mention the business name \"{name}\" naturally at least once in the body text\n"
             f"- Between {_POST_MIN_LEN} and {_POST_MAX_LEN} characters total — this is a hard limit, count carefully\n"
             "- Friendly, professional tone\n"
             "- Write in full, engaging paragraphs — do not use bullet points or lists\n"
@@ -1485,11 +1503,15 @@ async def ai_generate(req: AIGenerateRequest, db: Session = Depends(get_db)):
     city     = business.city     or ""
     category = business.category or ""
     keywords = business.keywords or []
+    address  = business.address  or ""
+    phone    = business.phone_number or business.phone or ""
+    website  = business.website  or ""
     reference_text = _get_reference_post_text(db, req.business_id)
 
     try:
         text = await asyncio.to_thread(
-            _generate_post_text, req.topic, name, city, category, keywords, reference_text
+            _generate_post_text, req.topic, name, city, category, keywords, reference_text,
+            address, phone, website,
         )
     except Exception as e:
         logger.error("AI text generation failed: %s", e)
