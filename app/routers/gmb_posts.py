@@ -1365,6 +1365,23 @@ def _get_reference_post_text(db: Session, business_id: int) -> Optional[str]:
     return None
 
 
+_POST_MIN_LEN = 1000
+_POST_MAX_LEN = 1500  # Google Business Profile post content hard limit
+
+
+def _truncate_to_sentence(text: str, max_len: int) -> str:
+    """Hard-cap text at max_len, preferring to cut at the last sentence boundary."""
+    if len(text) <= max_len:
+        return text
+    clipped = text[:max_len]
+    cut = max(clipped.rfind(". "), clipped.rfind("! "), clipped.rfind("? "))
+    if cut == -1:
+        cut = clipped.rfind("\n")
+    if cut > max_len * 0.6:  # only use the boundary if it doesn't lose too much content
+        return clipped[: cut + 1].rstrip()
+    return clipped.rstrip()
+
+
 def _generate_post_text(
     topic: str,
     name: str,
@@ -1385,21 +1402,49 @@ def _generate_post_text(
         "---\n"
         if reference_text else ""
     )
-    prompt = (
-        f"Write a Google Business post for {name}, a {category or 'local'} business"
-        + (f" in {city}" if city else "")
-        + f".\n\nTopic: {topic}\n{kw_line}\n"
-        f"{reference_block}\n"
-        "Rules:\n"
-        f"- Start with the topic as the first line: \"{topic}\"\n"
-        "- Between 1000 and 1500 characters total\n"
-        "- Friendly, professional tone\n"
-        "- Write in full, engaging paragraphs — do not use bullet points or lists\n"
-        "- End with a short call to action\n"
-        "- No hashtags\n"
-        "- Output the post text only, nothing else"
-    )
-    return _call_gemini(prompt)
+
+    def build_prompt(correction: str = "") -> str:
+        return (
+            f"Write a Google Business post for {name}, a {category or 'local'} business"
+            + (f" in {city}" if city else "")
+            + f".\n\nTopic: {topic}\n{kw_line}\n"
+            f"{reference_block}\n"
+            f"{correction}"
+            "Rules:\n"
+            f"- Start with the topic as the first line: \"{topic}\"\n"
+            f"- Between {_POST_MIN_LEN} and {_POST_MAX_LEN} characters total — this is a hard limit, count carefully\n"
+            "- Friendly, professional tone\n"
+            "- Write in full, engaging paragraphs — do not use bullet points or lists\n"
+            "- End with a short call to action\n"
+            "- No hashtags\n"
+            "- Output the post text only, nothing else"
+        )
+
+    text = _call_gemini(build_prompt())
+
+    # Gemini doesn't reliably hit an exact character count on the first try —
+    # give it up to 2 corrective passes with the actual length before falling
+    # back to a hard truncation (GMB rejects posts over _POST_MAX_LEN chars).
+    for _ in range(2):
+        length = len(text)
+        if _POST_MIN_LEN <= length <= _POST_MAX_LEN:
+            break
+        if length > _POST_MAX_LEN:
+            correction = (
+                f"Your previous draft was {length} characters — too long by {length - _POST_MAX_LEN}. "
+                f"Rewrite it to be between {_POST_MIN_LEN} and {_POST_MAX_LEN} characters total.\n\n"
+            )
+        else:
+            correction = (
+                f"Your previous draft was only {length} characters — too short by {_POST_MIN_LEN - length}. "
+                f"Rewrite it to be between {_POST_MIN_LEN} and {_POST_MAX_LEN} characters total, with more detail.\n\n"
+            )
+        text = _call_gemini(build_prompt(correction))
+
+    if len(text) > _POST_MAX_LEN:
+        text = _truncate_to_sentence(text, _POST_MAX_LEN)
+
+    return text
 
 
 def _generate_and_upload_image(topic: str, name: str, category: str) -> str:
